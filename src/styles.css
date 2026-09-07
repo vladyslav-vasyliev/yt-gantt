@@ -1,0 +1,97 @@
+:root {
+  --bg: #eef1f5;        /* серая подложка контент-зоны */
+  --surface: #ffffff;   /* белые подложки: шапка, панели, подвал */
+  --border: #d9e0ea;
+  --text: #1c2433;
+  --muted: #66738c;
+  --accent: #2f6fdb;
+  --ok: #1f9d61; --warn: #b07d1a; --err: #c8384a;
+  --bar-h: 56px;        /* высота шапки/подвала, кратна 8 */
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+
+/* единая колонка контента: по гайду боковой отступ одинаков всегда — 48px */
+.shell { max-width: 1496px; margin: 0 auto; padding: 0 48px; }
+
+/* шапка */
+.topbar { position: sticky; top: 0; z-index: 20;
+          background: var(--surface); border-bottom: 1px solid var(--border); }
+.topbar-in { height: var(--bar-h); display: flex; align-items: baseline; gap: 16px; }
+.brand { align-self: center; font-size: 18px; font-weight: 600; }
+.brand-note { color: var(--muted); font-size: 13px; }
+
+/* контент-зона */
+.content { padding-top: 24px; padding-bottom: 48px; }
+.content-head { display: flex; align-items: baseline; justify-content: space-between;
+                gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.content-head h1 { font-size: 24px; font-weight: 600; margin: 0; }
+.content-head-note { color: var(--muted); font-size: 13px; }
+
+/* белая подложка */
+.panel { background: var(--surface); border: 1px solid var(--border);
+         border-radius: 8px; padding: 24px; margin-bottom: 16px; }
+
+/* визуальные группы настроек (вложенный fieldset в табе «Задачи») */
+fieldset.group { margin: 0; min-width: 0; border: 0; padding: 0; }
+.group-title { color: var(--muted); font-weight: 600; font-size: 13px; margin-bottom: 12px; }
+
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 16px; padding: 0 8px; }
+.hint code { color: var(--text); background: #e4e9f1; padding: 1px 4px; border-radius: 4px; }
+
+/* пустое состояние — заглушка вместо белой страницы */
+.empty { text-align: center; padding: 48px 24px; }
+.empty-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.empty-text { color: var(--muted); }
+
+/* диаграмма и подписи */
+.legend-item { font-size: 12px; color: var(--muted); }
+.legend { margin-top: 8px; }
+.summary-row { margin-bottom: 16px; }
+.problems { margin-top: 16px; }
+.problems ul { color: var(--warn); font-size: 12px; }
+.problems-toggle { color: var(--accent); font-size: 14px; cursor: pointer; user-select: none; }
+
+/* панель масштаба диаграммы */
+.zoombar { margin-bottom: 8px; }
+.zoom-label { color: var(--muted); font-size: 12px; }
+
+/* MUI Table: sticky-колонка задач, нулевые отступы ячеек с SVG */
+.gantt-table th, .gantt-table td { padding: 0 !important; vertical-align: middle !important; }
+.gantt-label-col { position: sticky; left: 0; z-index: 2;
+                   background: var(--surface);
+                   box-shadow: 6px 0 8px -6px rgba(28, 36, 51, .25); }
+.gantt-label-svg { display: block; }
+.gantt-table [data-tid='gantt-axis'] { display: block; }
+.gantt-table [data-tid='gantt-svg'] { display: block; }
+
+/* подсветка строки при наведении: видно, какие бары относятся к задаче
+   (колонка задач sticky — фон красим ячейкам, не строке) */
+.gantt-table tbody tr:hover > td { background: #eaf1fc; }
+
+/* шапка колонки задач + ручка изменения её ширины */
+.gantt-col-title { display: block; padding: 8px 12px; color: var(--muted);
+                   font-size: 12px; font-weight: 600; }
+.gantt-resizer { position: absolute; top: 0; right: 0; width: 9px; height: 100%;
+                 cursor: col-resize; z-index: 3; touch-action: none; }
+.gantt-resizer::after { content: ""; position: absolute; left: 3px; top: 25%;
+                        height: 50%; width: 2px; border-radius: 1px;
+                        background: var(--border); }
+.gantt-resizer:hover::after { background: var(--accent); }
+
+/* подвал: лаконичный, минимальный набор ссылок */
+.footer { background: var(--surface); border-top: 1px solid var(--border); }
+.footer-in { min-height: var(--bar-h); display: flex; align-items: center;
+             justify-content: space-between; gap: 16px; flex-wrap: wrap;
+             padding-top: 12px; padding-bottom: 12px;
+             color: var(--muted); font-size: 12px; }
+.footer-in code { background: #e4e9f1; padding: 1px 4px; border-radius: 4px; }
+.footer-in a { color: var(--muted); }
+.footer-in a:hover { color: var(--text); }
+
+/* адаптивность: на узких экранах отступ меньше */
+@media (max-width: 768px) {
+  .shell { padding: 0 24px; }
+  .content-head h1 { font-size: 20px; }
+}
