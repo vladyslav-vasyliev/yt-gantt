@@ -224,3 +224,4 @@ export function saveSettings(s: AppSettings): void {
     localStorage.setItem("yt_starttoday", s.startToday ? "1" : "0");
   } catch { /* приватный режим — не критично */ }
 }
+

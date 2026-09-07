@@ -185,3 +185,4 @@ describe("масштаб диаграммы: fitWeeks / clampDayPx", () => {
     expect(clampDayPx(0.1)).toBe(3);
   });
 });
+
