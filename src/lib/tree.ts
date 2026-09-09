@@ -128,8 +128,10 @@ export interface Placed { start: Date; end: Date }
 //   корень без факта — от начала оси;
 //   первый ребёнок — одновременно с родителем;
 //   каждый следующий sibling — после конца предыдущего (каскад внутри поддерева);
+//   задача не взята в работу (нет факта старта и Resolved) — не раньше сегодня;
 //   родитель с детьми — обёртка: отсчёт от начала работ на дочерней, начатой
-//   раньше других (самый ранний факт старта в поддереве), конец — конец последнего;
+//   раньше других (самый ранний факт старта в поддереве), завершение — не раньше
+//   самой поздней даты завершения детей (и не раньше собственного факта конца);
 //   родитель без детей в выборке — обычная задача со своей длительностью.
 export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boolean): Issue[] {
   const resolved = new Map<string, Placed>();
@@ -189,8 +191,9 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
     let start: Date, end: Date, estStart: Date, estEnd: Date;
     if (ownKids.length) {
       // родитель-обёртка: отсчёт — момент начала работ на дочерней, начатой
-      // раньше других (самый ранний факт старта среди детей); конец — конец
-      // последнего ребёнка. Без фактов у детей — старт первого ребёнка по каскаду
+      // раньше других (самый ранний факт старта среди детей); завершение —
+      // НЕ РАНЬШЕ самой поздней даты завершения детей: если у родителя есть
+      // собственный факт конца (Resolved), берём максимум из него и детей
       let prevEnd: Date | null = null;
       let earliestFact: Date | null = null; // самый ранний actualStart среди детей
       let minStart: Date | null = null;     // самый ранний старт ребёнка по каскаду
@@ -204,6 +207,10 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       }
       start = earliestFact ?? minStart!;
       end = new Date(prevEnd!);
+      // собственный факт завершения родителя тоже учитываем: бар не может
+      // закончиться раньше фактического завершения родительской задачи
+      const ownEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
+      if (ownEnd && ownEnd > end) end = new Date(ownEnd);
       estStart = new Date(start); estEnd = new Date(end);
     } else {
       // лист: факт (переход в статус начала / дата Resolved) перекрывает каскад
@@ -222,7 +229,12 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
         start = barStartBefore(end, Math.max(it.days ?? 1, 1));
         estStart = new Date(start); estEnd = new Date(end);
       } else {
-        start = new Date(anchor);
+        // не взята в работу: план не может начинаться раньше сегодняшнего дня
+        // (якорь из каскада мог уехать в прошлое); при пропуске выходных —
+        // не раньше ближайшего рабочего дня
+        start = anchor < today
+          ? (skipWeekends ? nextWorkday(today) : new Date(today))
+          : new Date(anchor);
         estStart = new Date(start);
         end = barEnd(start, Math.max(it.days ?? 1, 1));
         estEnd = new Date(end);

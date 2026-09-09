@@ -48,6 +48,8 @@ export interface Issue {
   resolved: boolean;
   resolvedAt: Date | null;
   _fieldValues: string[];
+  /** значения всех кастомных полей: { имяПоля → строка } — для лямбд расчёта */
+  _customFields?: Record<string, string>;
   _statuses?: Set<string>;
   /** полные списки возможных значений из бандлов полей проекта */
   _bundleValues?: Record<string, string[]>;

@@ -93,21 +93,23 @@ describe("schedule — модель «родитель-обёртка»", () => 
     expect(o.R2.s).toBe(o.B1.s);
   });
 
-  it("выходные пропускаются: 3 раб. дня от понедельника оси → среда", () => {
-    // фиксированная ось через startToday=false: понедельник текущей недели
+  it("выходные пропускаются: 3 раб. дня → конец через 2 календарных дня", () => {
     const issues = [mkIssue("X", 3)];
-    schedule(issues, true, false);
-    const s = issues[0].start!;
-    expect(s.getDay()).toBe(1); // понедельник
-    const e = issues[0].end!;
-    expect(e.getDay()).toBe(3); // среда (пн вт ср)
-    expect(e.getTime() - s.getTime()).toBe(2 * 86400000);
+    schedule(issues, true, true);
+    // старт не раньше сегодня; конец — ровно через 3 рабочих дня
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    expect(issues[0].start!.getTime()).toBeGreaterThanOrEqual(today.getTime());
+    expect(issues[0].end!.getTime() - issues[0].start!.getTime()).toBe(2 * 86400000);
   });
 
-  it("ось при startToday=false — понедельник текущей недели; при true — ближайший рабочий день", () => {
+  it("ось при startToday=false — понедельник недели или сегодня (что позже); при true — рабочий день", () => {
     const a = [mkIssue("A", 1)];
     schedule(a, true, false);
-    expect(a[0].start!.getDay()).toBe(1);
+    // ось — понедельник недели, но задача не взята в работу и не может
+    // начинаться раньше сегодня: если сегодня позже понедельника — старт сегодня
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const monday = new Date(today); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    expect([today.getTime(), monday.getTime()]).toContain(a[0].start!.getTime());
     const b = [mkIssue("B", 1)];
     schedule(b, true, true);
     expect([1, 2, 3, 4, 5]).toContain(b[0].start!.getDay());
@@ -189,11 +191,91 @@ describe("schedule — модель «родитель-обёртка»", () => 
       expect(f(P.end!)).toBe(f(K2.end!));
     });
 
-    it("без факта — прежнее каскадное поведение от оси", () => {
-      const d = mkIssue("D", 2);
-      schedule([d], true, true);
-      expect([1, 2, 3, 4, 5]).toContain(d.start!.getDay());
+    it("завершение родителя — не раньше самой поздней даты завершения детей", () => {
+      // K1 начата раньше и завершена раньше, K2 — позже; родитель (без
+      // собственного факта конца) закрывается по последнему ребёнку
+      const P = mkIssue("P", 10);
+      const K1 = mkIssue("K1", 2);
+      const K2 = mkIssue("K2", 2);
+      P._kids = ["K1", "K2"];
+      K1.actualStart = new Date(2026, 7, 3); // пн 2026-08-03
+      K1.resolved = true;
+      K1.actualEnd = new Date(2026, 7, 4);
+      K2.actualStart = new Date(2026, 7, 10); // пн 2026-08-10
+      K2.resolved = true;
+      K2.actualEnd = new Date(2026, 7, 14);
+      schedule([P, K1, K2], true, true);
+      expect(f(P.start!)).toBe("2026-08-03"); // от самой ранней начатой
+      expect(f(P.end!)).toBe("2026-08-14");   // до самой поздней завершённой
     });
+
+    it("правило «не раньше позднего ребёнка» сквозное: работает на всех уровнях", () => {
+      // R -> A -> B -> C, 4 уровня: самый поздний конец — у глубокого внука C.
+      // Сквозное правило: end(B) >= end(C), end(A) >= end(B) = end(C),
+      // end(R) >= end(A) = end(C) — независимо от планов R и A (они длинные,
+      // но заканчиваются раньше из-за ранних фактов своих детей).
+      const R = mkIssue("R", 30);
+      const A = mkIssue("A", 30);
+      const B = mkIssue("B", 30);
+      const C = mkIssue("C", 3);
+      R._kids = ["A"]; A._kids = ["B"]; B._kids = ["C"];
+      // C начата и завершена в августе; B/A/R без фактов
+      C.actualStart = new Date(2026, 7, 10);
+      C.resolved = true;
+      C.actualEnd = new Date(2026, 7, 12);
+      schedule([R, A, B, C], true, true);
+      expect(f(C.end!)).toBe("2026-08-12");
+      expect(f(B.end!)).toBe(f(C.end!));           // уровень 3
+      expect(f(A.end!)).toBe(f(B.end!));           // уровень 2
+      expect(f(R.end!)).toBe(f(A.end!));           // уровень 1 — сквозная передача
+    });
+
+    it("сквозность + собственный факт: максимум от позднего внука и своего факта", () => {
+      // R(resolved 08-20) -> A -> B(C, конец 08-12): R закрывается по СВОЕМУ
+      // факту 08-20, т.к. он позже позднего ребёнка A (08-12)
+      const R = mkIssue("R", 30);
+      const A = mkIssue("A", 10);
+      const B = mkIssue("B", 10);
+      const C = mkIssue("C", 3);
+      R._kids = ["A"]; A._kids = ["B"]; B._kids = ["C"];
+      C.actualStart = new Date(2026, 7, 10);
+      C.resolved = true;
+      C.actualEnd = new Date(2026, 7, 12);
+      R.resolved = true;
+      R.actualEnd = new Date(2026, 7, 20);
+      schedule([R, A, B, C], true, true);
+      expect(f(A.end!)).toBe("2026-08-12"); // A тянется до позднего C
+      expect(f(R.end!)).toBe("2026-08-20"); // но не раньше собственного факта R
+    });
+
+    it("собственный факт конца родителя продлевает бар, если он позже детей", () => {
+      const P = mkIssue("P", 10);
+      const K = mkIssue("K", 2);
+      P._kids = ["K"];
+      K.actualStart = new Date(2026, 7, 3);
+      K.resolved = true;
+      K.actualEnd = new Date(2026, 7, 5);
+      P.resolved = true;
+      P.actualEnd = new Date(2026, 7, 12); // родитель закрыт позже ребёнка
+      schedule([P, K], true, true);
+      expect(f(P.start!)).toBe("2026-08-03");
+      expect(f(P.end!)).toBe("2026-08-12"); // не раньше факта самого родителя
+    });
+
+  it("без факта — прежнее каскадное поведение от оси", () => {
+    const d = mkIssue("D", 2);
+    schedule([d], true, true);
+    expect([1, 2, 3, 4, 5]).toContain(d.start!.getDay());
+  });
+
+  it("не взята в работа: план не раньше сегодня (якорь из каскада мог уйти в прошлое)", () => {
+    // S — независимый корень без факта: пусть якорь оси и оказался в прошлом
+    // (при startToday=false это понедельник недели) — клэмп уводит старт на сегодня
+    const s = mkIssue("S", 2);
+    schedule([s], true, false);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    expect(s.start!.getTime()).toBeGreaterThanOrEqual(today.getTime());
+  });
   });
 
   describe("бар оценки (estStart/estEnd) параллельно факту", () => {

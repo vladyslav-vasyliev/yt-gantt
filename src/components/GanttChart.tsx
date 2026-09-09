@@ -229,7 +229,7 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
             <g>
               {/* факт — нижняя дорожка: переход в статус начала → Resolved (или сегодня) */}
               <title>
-                {`Факт: ${fmtDate(fact.start)} — ${fmtDate(fact.end)}${fact.open ? " (в р��боте)" : ""}\n` +
+                {`Факт: ${fmtDate(fact.start)} — ${fmtDate(fact.end)}${fact.open ? " (в работе)" : ""}\n` +
                  `Реальная длительность: ${calD} к.д. / ${workD} р.д.`}
               </title>
               <rect x={fx} y={y + 19} width={fw} height={10} rx={3}

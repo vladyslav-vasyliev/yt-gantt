@@ -2,24 +2,20 @@
 // ВАЖНО: setSettings из App — готовый апдейтер (patch → сохранение → state),
 // вторично оборачивать его в setState нельзя — иначе ввод в поля не работает.
 //
-// Блок настроек разделён на табы:
-//   «Задачи» (открывается по умолчанию) — идентификаторы + «Загрузить задачи»,
-//     через Stack ниже — всё содержимое бывшего блока «Поля и построение»
-//     (поля размера/статуса, статус начала и тип связи выбираются из значений
-//     УЖЕ загруженных тикетов + «Построить», кнопка неактивна до загрузки);
+// Три таба:
+//   «Задачи» (открывается по умолчанию) — идентификаторы, «Загрузить задачи»,
+//     тип связи дочерних, чекбоксы расписания и «Построить»;
+//   «Расчёт» — js-лямбды размера и даты начала работ
+//     (см. lib/lambda.ts: (issue, activities) => …, с проверкой компиляции);
 //   «Подключение» — URL, токен, проект.
-//
-// Инлайн-валидации показываются после первой попытки «Загрузить задачи»
-// (раньше за этим следил react-ui-validations).
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
-  Autocomplete, Box, Button, Checkbox, CircularProgress, FormControlLabel,
-  Stack, Tab, Tabs, TextField,
+  Box, Button, Checkbox, CircularProgress, Divider, FormControlLabel,
+  InputAdornment, Stack, Tab, Tabs, TextField, Tooltip,
 } from "@mui/material";
-import { parseIds, withCurrent, type AppSettings } from "../lib/constants";
-
-// элементы Autocomplete: объекты {value, label} (withCurrent даёт их сразу)
-type Item = { value: string; label: string };
+import ReplayIcon from "@mui/icons-material/Replay";
+import { parseIds, type AppSettings } from "../lib/constants";
+import { compileSizeLambda, compileStartLambda } from "../lib/lambda";
 
 const urlErr = (v: string): string =>
   (v && v.trim() !== "" && !v.trim().startsWith("http") ? "URL должен начинаться с http(s)://" : "");
@@ -28,15 +24,24 @@ interface Props {
   settings: AppSettings;
   setSettings: (patch: Partial<AppSettings>) => void;
   linkTypeOptions: string[];
-  fieldNames: string[];
-  statuses: string[];
   loaded: boolean;
   onLoad: () => void;
   onBuild: () => void;
   busy: boolean;
+  // лямбды расчёта: тексты и колбэки изменения (текст + сохранить в localStorage)
+  sizeLambda: string;
+  startLambda: string;
+  onSizeLambdaChange: (code: string) => void;
+  onStartLambdaChange: (code: string) => void;
+  onSizeLambdaReset: () => void;
+  onStartLambdaReset: () => void;
 }
 
-export default function SettingsForm({ settings, setSettings, linkTypeOptions, fieldNames, statuses, loaded, onLoad, onBuild, busy }: Props): React.ReactElement {
+export default function SettingsForm({
+  settings, setSettings, linkTypeOptions, loaded, onLoad, onBuild, busy,
+  sizeLambda, startLambda, onSizeLambdaChange, onStartLambdaChange,
+  onSizeLambdaReset, onStartLambdaReset,
+}: Props): React.ReactElement {
   const set = (patch: Partial<AppSettings>): void => setSettings(patch);
   const f = (key: keyof AppSettings) => (v: string): void => set({ [key]: v } as Partial<AppSettings>);
 
@@ -51,27 +56,11 @@ export default function SettingsForm({ settings, setSettings, linkTypeOptions, f
   const errToken = submitted && !settings.token.trim() ? "Укажите permanent token" : "";
   const errIds = submitted && !parseIds(settings.ids).length ? "Не распознан ни один идентификатор" : "";
 
-  const sizeItems = useMemo(
-    () => withCurrent(fieldNames, settings.sizeField, "Size"),
-    [fieldNames, settings.sizeField]);
-  const stateItems = useMemo(
-    () => withCurrent(fieldNames, settings.stateField, "State"),
-    [fieldNames, settings.stateField]);
-  const statusItems = useMemo(
-    () => withCurrent(statuses, settings.startStatus, "In Progress"),
-    [statuses, settings.startStatus]);
+  // лямбды проверяются на каждый ввод: ошибка компиляции — под полем
+  const sizeErr = compileSizeLambda(sizeLambda).error;
+  const startErr = compileStartLambda(startLambda).error;
   // пустая связь отображается как «— только указанные тикеты —»
   const NO_LINK = "— только указанные тикеты —";
-  const linkItems = useMemo(
-    () => [NO_LINK, ...linkTypeOptions].map((v) => ({ value: v === NO_LINK ? "" : v, label: v })),
-    [linkTypeOptions]);
-
-  // общие пропсы Autocomplete: элементы {value, label}, значение по value
-  const comboProps = {
-    size: "small" as const,
-    getOptionLabel: (i: Item) => i.label,
-    isOptionEqualToValue: (o: Item, v: Item) => o.value === v.value,
-  };
 
   const load = (): void => {
     setSubmitted(true);
@@ -87,12 +76,13 @@ export default function SettingsForm({ settings, setSettings, linkTypeOptions, f
       <Tabs value={tab} onChange={(_, v: string) => setTab(v)}>
         {/* таб «Задачи» — первый и открыт по умолчанию */}
         <Tab value="issues" label="Задачи" />
-        {/* таб «Подключение» — второй в списке */}
+        {/* таб «Расчёт» — лямбды размера и начала работ */}
+        <Tab value="calc" label="Расчёт" />
+        {/* таб «Подключение» — третий в списке */}
         <Tab value="connection" label="Подключение" />
       </Tabs>
 
       {tab === "issues" && (
-        /* идентификаторы с кнопкой загрузки отделены от полей построения (spacing) */
         <Stack spacing={3} sx={{ pt: 2 }}>
           <Stack direction="row" spacing={2} sx={{ alignItems: "flex-end" }}>
             <TextField
@@ -107,35 +97,22 @@ export default function SettingsForm({ settings, setSettings, linkTypeOptions, f
             </Button>
           </Stack>
 
-          {/* поля и статусы — из загруженных тикетов + «Построить» */}
+          {/* тип связи и параметры расписания + «Построить» */}
           <fieldset className="group" disabled={!loaded}>
-            {/* заголовок — обычным блоком: legend с границей fieldset налезает на поля */}
             <div className="group-title">
-              Поля и построение{loaded ? "" : " (сначала загрузите задачи)"}
+              Построение{loaded ? "" : " (сначала загрузите задачи)"}
             </div>
-            <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
-              <Autocomplete<Item> id="sizeField" {...comboProps} sx={{ width: 160 }}
-                options={sizeItems}
-                value={sizeItems.find((i) => i.value === settings.sizeField) ?? null}
-                onChange={(_, v) => set({ sizeField: v?.value ?? "" })}
-                renderInput={(p) => <TextField {...p} label="Поле размера" />} />
-              <Autocomplete<Item> id="stateField" {...comboProps} sx={{ width: 160 }}
-                options={stateItems}
-                value={stateItems.find((i) => i.value === settings.stateField) ?? null}
-                onChange={(_, v) => set({ stateField: v?.value ?? "" })}
-                renderInput={(p) => <TextField {...p} label="Поле статуса" />} />
-              <Autocomplete<Item> id="startStatus" {...comboProps} sx={{ width: 180 }}
-                options={statusItems}
-                value={statusItems.find((i) => i.value === settings.startStatus) ?? null}
-                onChange={(_, v) => set({ startStatus: v?.value ?? "" })}
-                renderInput={(p) => <TextField {...p} label="Статус начала работы" />} />
-              <Autocomplete<Item> id="linkType" {...comboProps} sx={{ width: 200 }}
-                options={linkItems}
-                value={linkItems.find((i) => i.value === settings.linkType) ?? { value: settings.linkType, label: settings.linkType }}
-                onChange={(_, v) => set({ linkType: v?.value ?? "" })}
-                renderInput={(p) => <TextField {...p} label="Тип связи дочерних" />} />
-            </Stack>
-            <Stack direction="row" spacing={2} useFlexGap sx={{ mt: 2, alignItems: "center", flexWrap: "wrap" }}>
+            <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+              <Tooltip title="Имя связи, под которым дети видны на тикете (для стандартной иерархии — parent for); пусто — только указанные тикеты">
+                <TextField id="linkType" size="small" sx={{ width: 220 }}
+                  label="Тип связи дочерних"
+                  value={settings.linkType}
+                  onChange={(e) => f("linkType")(e.target.value)}
+                  placeholder={NO_LINK}
+                  slotProps={{
+                    input: { startAdornment: <InputAdornment position="start">↳</InputAdornment> },
+                  }} />
+              </Tooltip>
               <FormControlLabel control={
                 <Checkbox size="small" checked={settings.skipWeekends}
                           onChange={(e) => set({ skipWeekends: e.target.checked })} />
@@ -149,6 +126,62 @@ export default function SettingsForm({ settings, setSettings, linkTypeOptions, f
               </Button>
             </Stack>
           </fieldset>
+        </Stack>
+      )}
+
+      {tab === "calc" && (
+        <Stack spacing={3} sx={{ pt: 2 }}>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+            <TextField
+              id="sizeLambda" label="Размер (дни)" multiline minRows={6} maxRows={20} fullWidth
+              value={sizeLambda} onChange={(e) => onSizeLambdaChange(e.target.value)}
+              error={!!sizeErr} helperText={sizeErr ?? "(issue, activities) ⇒ целое число дней — плановая длительность задачи"}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title="Вернуть лямбду по умолчанию (Size → дни)">
+                        <Button size="small" aria-label="Сбросить лямбду размера"
+                                onClick={onSizeLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
+                          сброс
+                        </Button>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                  sx: { fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 13 },
+                },
+              }} />
+          </Stack>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+            <TextField
+              id="startLambda" label="Начало работ" multiline minRows={6} maxRows={20} fullWidth
+              value={startLambda} onChange={(e) => onStartLambdaChange(e.target.value)}
+              error={!!startErr} helperText={startErr ?? "(issue, activities) ⇒ дата начала работ или null — фактическая дата начала работ"}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title="Вернуть лямбду по умолчанию (переход в статус Doing)">
+                        <Button size="small" aria-label="Сбросить лямбду начала работ"
+                                onClick={onStartLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
+                          сброс
+                        </Button>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                  sx: { fontFamily: "ui-monospace, 'Cascadia Code', Consolas, monospace", fontSize: 13 },
+                },
+              }} />
+          </Stack>
+          <Divider/>
+          <div className="hint">
+            Лямбды получают <code>issue</code> —{" "}
+            {"{ id, summary, sizeRaw, resolved, resolvedAt, links, customFields }"} (customFields —
+            словарь «имя поля → значение») и <code>activities</code> — историю изменений{" "}
+            {"[{ ts, field, added[], removed[] }]"}. Размер должен вернуть число дней,
+            начало работ — Date или null. Ошибки компиляции подсвечиваются; сломанная лямбда
+            заменяется дефолтной, текст ошибки попадёт в предупреждения под диаграммой.
+          </div>
         </Stack>
       )}
 

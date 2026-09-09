@@ -69,6 +69,12 @@ export async function fetchIssue(
 
   const _fieldValues = (data.customFields || []).map((f) => f?.name).filter(Boolean) as string[];
 
+  // значения всех кастомных полей одним словарём — для пользовательских лямбд
+  const _customFields: Record<string, string> = {};
+  for (const f of data.customFields || []) {
+    if (f?.name) _customFields[f.name] = parseFieldValue(f.value) ?? "";
+  }
+
   // полные списки возможных значений из бандлов полей проекта:
   // { fieldName → [значения] } — например State → все статусы воркфлоу.
   // У полей без бандла (SimpleProjectCustomField) значений нет — пропускаем.
@@ -84,7 +90,7 @@ export async function fetchIssue(
     id: issueId, summary: data.summary || "", sizeRaw, links,
     resolved: data.resolved != null,
     resolvedAt: data.resolved ? new Date(data.resolved) : null,
-    _fieldValues, _bundleValues,
+    _fieldValues, _customFields, _bundleValues,
   };
 }
 

@@ -89,7 +89,7 @@ test.beforeEach(async ({ context, page }) => {
   await page.clock.setFixedTime(new Date(NOW));
 });
 
-test("смена поля статуса пересчитывает факт без повторной загрузки истории", async ({ page }) => {
+test("смена лямбды начала работ пересчитывает факт без повторной загрузки истории", async ({ page }) => {
   await mockYouTrack(page);
   await page.route("**/yt/api/issues/1?*", (route) => route.fulfill(mkIssue({
     idReadable: "INFRA-1", summary: "Field selection", resolved: null, links: [],
@@ -112,9 +112,18 @@ test("смена поля статуса пересчитывает факт б�
   });
   await build(page);
   const fact = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\./ });
+  // дефолтная лямбда ищет «Doing» — в истории его нет, факта нет
+  await expect(fact).toHaveCount(0);
+  // меняем лямбду: дата начала — первый переход поля State в истории
+  await tab(page, "Расчёт").click();
+  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
+  await tab(page, "Задачи").click();
+  await page.getByRole("button", { name: "Построить" }).click();
   await expect(fact).toHaveText("1 к.д. / 1 р.д.");
-  await page.locator("#stateField").click();
-  await page.getByRole("option", { name: "Workflow" }).click();
+  // другая лямбда: берём поле Workflow (событие 09-01)
+  await tab(page, "Расчёт").click();
+  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'Workflow')?.ts ?? null");
+  await tab(page, "Задачи").click();
   await page.getByRole("button", { name: "Построить" }).click();
   await expect(fact).toHaveText("4 к.д. / 4 р.д.");
   expect(historyRequests).toBe(1);
@@ -217,6 +226,12 @@ test("масштаб: кнопки «−»/«+» меняют ширину дн�
 test("диаграмма: факт работы — бар факта и длительность к.д./р.д.", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
+  // дефолтная лямбда старта ищет «Doing» — истории с ним нет; задаём лямбду
+  // «первый переход State» — у всех задач появляется факт
+  await tab(page, "Расчёт").click();
+  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
+  await tab(page, "Задачи").click();
+  await page.getByRole("button", { name: "Построить" }).click();
   // у каждой задачи — текст реальной длительности «N к.д. / M р.д.»
   const factText = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\. \/ \d+ р\.д\./ });
   await expect(factText.first()).toBeVisible();
@@ -224,13 +239,33 @@ test("диаграмма: факт работы — бар факта и дли�
   await expect(page).toHaveScreenshot("gantt-actual.png", { fullPage: true });
 });
 
-test("fallback размера: тикет без Size — M* и предупреждение", async ({ page }) => {
+test("лямбда размера: тикет без Size — дефолт 10 дн. без предупреждений", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
   await expect(page.locator(".summary-row")).toContainText("Задач: 3");
-  await expect(page.locator(".problems")).toContainText("Предупреждения");
-  // список свёрнут — раскрываем и проверяем содержимое
-  await page.locator(".problems").getByRole("button").or(page.locator(".problems a")).first().click();
-  await expect(page.locator(".problems")).toContainText("принят размер M");
+  // дефолтная лямбда размера молча заменяет неизвестное значение на 10 дней —
+  // предупреждений нет (в отличие от прежнего жёстко зашитого fallback)
+  await expect(page.locator(".problems")).toHaveCount(0);
+  // кастомная лямбда: размер = длина summary / 2 — предупреждение при ошибке
+  await tab(page, "Расчёт").click();
+  await page.fill("#sizeLambda", "(issue, activities) => issue.summary.length > 3 ? 5 : 7");
+  await tab(page, "Задачи").click();
+  await page.getByRole("button", { name: "Построить" }).click();
+  await expect(page.locator(".summary-row")).toContainText("Задач: 3");
+  await page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /^5д$/ }).first().isVisible();
   await expect(page).toHaveScreenshot("gantt-size-fallback.png", { fullPage: true });
+});
+
+test("сломанная лямбда: тост и предупреждение, расчёт не падает", async ({ page }) => {
+  await mockYouTrack(page);
+  await build(page);
+  await tab(page, "Расчёт").click();
+  await page.fill("#sizeLambda", "(issue, activities) => { throw new Error('boom'); }");
+  await tab(page, "Задачи").click();
+  await page.getByRole("button", { name: "Построить" }).click();
+  await page.locator(".problems a").click();
+  await expect(page.locator(".problems")).toContainText("лямбда «Размер»");
+  await expect(page.locator(".problems")).toContainText("принят размер 10 дн.");
+  // диаграмма построена — все задачи с дефолтным размером
+  await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible();
 });

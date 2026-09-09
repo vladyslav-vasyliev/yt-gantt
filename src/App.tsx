@@ -5,9 +5,16 @@ import SettingsForm from "./components/SettingsForm";
 import GanttChart from "./components/GanttChart";
 import {
   loadSettings, saveSettings, parseIds, applyProjectPrefix, fmtDate,
-  SIZE_MAP, MAX_ISSUES, type AppSettings, type Issue,
+  MAX_ISSUES, type AppSettings, type Issue,
 } from "./lib/constants";
-import { cache, fetchBatch, collectMetaFromIssues, collectLinkTypes, computeActualStart, idsWithoutHistory, PROXY } from "./lib/youtrack";
+import {
+  callSizeLambda, callStartLambda,
+  compileSizeLambda, compileStartLambda,
+  DEFAULT_SIZE_LAMBDA, DEFAULT_START_LAMBDA,
+  loadSizeLambda, loadStartLambda, saveSizeLambda, saveStartLambda,
+  resetSizeLambda, resetStartLambda,
+} from "./lib/lambda";
+import { cache, fetchBatch, collectLinkTypes, idsWithoutHistory, PROXY } from "./lib/youtrack";
 import { buildTreeAsync, dfsOrder, schedule, type TreeContext } from "./lib/tree";
 
 // тема: наследуем системный шрифт проекта, остальное — дефолты MUI
@@ -72,6 +79,23 @@ export default function App(): React.ReactElement {
   const [showProblems, setShowProblems] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextToastId = useRef(0);
+  // лямбды расчёта (таб «Расчёт»): тексты редактируются в форме,
+  // компилируются при построении; размер в localStorage
+  const [sizeLambda, setSizeLambda] = useState<string>(loadSizeLambda);
+  const [startLambda, setStartLambda] = useState<string>(loadStartLambda);
+
+  const changeSizeLambda = useCallback((code: string): void => {
+    setSizeLambda(code);
+    saveSizeLambda(code);
+  }, []);
+  const changeStartLambda = useCallback((code: string): void => {
+    setStartLambda(code);
+    saveStartLambda(code);
+  }, []);
+  const resetSizeLambdaText = useCallback((): void =>
+    setSizeLambda(resetSizeLambda()), []);
+  const resetStartLambdaText = useCallback((): void =>
+    setStartLambda(resetStartLambda()), []);
 
   const closeToast = useCallback((id: number): void =>
     setToasts((prev) => prev.filter((t) => t.id !== id)), []);
@@ -151,7 +175,7 @@ export default function App(): React.ReactElement {
   };
 
   // Шаг 2 — «Построить»: дерево по выбранной связи (дети докачиваются),
-  // факт считается из сохранённых историй п�� выбранным после загрузки полям.
+  // факт и размер считаются пользовательскими лямбдами (таб «Расчёт»).
   const build = async (): Promise<void> => {
     if (!cache.size) {
       toast.push("Сначала загрузите задачи кнопкой «Загрузить задачи»", { use: "error" });
@@ -161,10 +185,16 @@ export default function App(): React.ReactElement {
     const base = settings.baseUrl.trim().replace(/\/+$/, "");
     const token = settings.token.trim();
     const sizeField = settings.sizeField.trim() || "Size";
-    const stateField = settings.stateField.trim() || "State";
-    const startStatus = settings.startStatus.trim();
     const linkTypeName = settings.linkType.trim();
     const roots = parseIds(applyProjectPrefix(settings.ids, settings.project.trim().toUpperCase()));
+
+    // лямбды компилируются на каждый клик: пользователь мог изменить текст
+    const sizeRes = compileSizeLambda(sizeLambda);
+    const startRes = compileStartLambda(startLambda);
+    if (sizeRes.error) toast.push(sizeRes.error + " — используется лямбда по умолчанию", { use: "warning" });
+    if (startRes.error) toast.push(startRes.error + " — используется лямбда по умолчанию", { use: "warning" });
+    const sizeFn = sizeRes.fn ?? compileSizeLambda(DEFAULT_SIZE_LAMBDA).fn!;
+    const startFn = startRes.fn ?? compileStartLambda(DEFAULT_START_LAMBDA).fn!;
 
     setBusy(true);
     setShowProblems(false);
@@ -188,20 +218,10 @@ export default function App(): React.ReactElement {
 
       const chartIssues: Issue[] = [];
       for (const it of ordered) {
-        // факт вычисляем здесь: поля статуса выбираются уже после загрузки тикетов
-        it.actualStart = startStatus ? computeActualStart(it, stateField, startStatus) : null;
+        // факт и размер — через лямбды (issue + история изменений)
+        it.actualStart = callStartLambda(startFn, it, problems);
         it.actualEnd = it.resolvedAt;
-        const key = (it.sizeRaw || "").toUpperCase();
-        const original = it.sizeRaw;
-        if (SIZE_MAP[key] != null) {
-          it.days = SIZE_MAP[key];
-        } else {
-          it.days = SIZE_MAP.M;
-          it.sizeRaw = "M*";
-          problems.push(original
-            ? `${it.id}: «${sizeField}» = "${original}" (неизвестное значение) — принят размер M (${SIZE_MAP.M} дн.)`
-            : `${it.id}: поле «${sizeField}» не задано — принят размер M (${SIZE_MAP.M} дн.)`);
-        }
+        it.days = callSizeLambda(sizeFn, it, problems);
         chartIssues.push(it);
       }
 
@@ -234,9 +254,7 @@ export default function App(): React.ReactElement {
     }
   };
 
-  // селекты наполняются реальными значениями из загруженных тикетов
-  // (пересчёт после загрузки и после построения — истории детей добавляют статусы)
-  const meta = useMemo(() => (cache.size ? collectMetaFromIssues(settings.stateField) : { fieldNames: [], statuses: [] }), [loaded, chart, settings.stateField]);
+  // типы связей для поля «Тип связи дочерних» — из загруженных тикетов
   const linkTypeOptions = useMemo(() => (cache.size ? collectLinkTypes() : []), [loaded, chart]);
 
   return (
@@ -247,7 +265,6 @@ export default function App(): React.ReactElement {
       <header className="topbar">
         <div className="shell topbar-in">
           <span className="brand">YouTrack&nbsp;→&nbsp;Gantt</span>
-          <span className="brand-note">расписание задач по связям, плану и факту</span>
         </div>
       </header>
 
@@ -257,18 +274,6 @@ export default function App(): React.ReactElement {
           <h1>Диаграмма Ганта</h1>
           <span className="content-head-note">два шага: загрузить задачи → выбрать поля и построить</span>
         </div>
-
-        <SettingsForm
-          settings={settings}
-          setSettings={set}
-          linkTypeOptions={linkTypeOptions}
-          fieldNames={meta.fieldNames}
-          statuses={meta.statuses}
-          loaded={loaded}
-          onLoad={load}
-          onBuild={build}
-          busy={busy}
-        />
 
         <div className="hint">
           Дочерние тикеты подтягиваются по выбранному типу связи (рекурсивно, всё поддерево) и
@@ -281,6 +286,22 @@ export default function App(): React.ReactElement {
           стандартной иерархии это <code>parent for</code>). Если поле Size пустое или
           неизвестно — задача считается <b>M</b> (10 дн.).
         </div>
+
+        <SettingsForm
+          settings={settings}
+          setSettings={set}
+          linkTypeOptions={linkTypeOptions}
+          loaded={loaded}
+          onLoad={load}
+          onBuild={build}
+          busy={busy}
+          sizeLambda={sizeLambda}
+          startLambda={startLambda}
+          onSizeLambdaChange={changeSizeLambda}
+          onStartLambdaChange={changeStartLambda}
+          onSizeLambdaReset={resetSizeLambdaText}
+          onStartLambdaReset={resetStartLambdaText}
+        />
 
         {chart ? (
           <section className="panel">
