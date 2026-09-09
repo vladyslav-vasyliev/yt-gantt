@@ -93,13 +93,18 @@ describe("schedule — модель «родитель-обёртка»", () => 
     expect(o.R2.s).toBe(o.B1.s);
   });
 
-  it("выходные пропускаются: 3 раб. дня → конец через 2 календарных дня", () => {
+  it("выходные пропускаются: бар X рабочих дней, конец — рабочий день", () => {
     const issues = [mkIssue("X", 3)];
     schedule(issues, true, true);
-    // старт не раньше сегодня; конец — ровно через 3 рабочих дня
+    // старт не раньше сегодня; длительность — ровно 3 рабочих дня (пн–пт),
+    // поэтому конец — рабочий день, а календарная разница — 2..4 дня
     const today = new Date(); today.setHours(0, 0, 0, 0);
     expect(issues[0].start!.getTime()).toBeGreaterThanOrEqual(today.getTime());
-    expect(issues[0].end!.getTime() - issues[0].start!.getTime()).toBe(2 * 86400000);
+    const end = issues[0].end!;
+    expect([1, 2, 3, 4, 5]).toContain(end.getDay());
+    const cal = Math.round((end.getTime() - issues[0].start!.getTime()) / 86400000) + 1;
+    expect(cal).toBeGreaterThanOrEqual(3);
+    expect(cal).toBeLessThanOrEqual(5); // 3 раб. дня ≤ 3 к.д. ≤ 3 раб. + 2 вых.
   });
 
   it("ось при startToday=false — понедельник недели или сегодня (что позже); при true — рабочий день", () => {

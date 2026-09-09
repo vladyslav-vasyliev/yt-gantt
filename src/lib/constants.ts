@@ -199,7 +199,7 @@ export function loadSettings(): AppSettings {
     try { return localStorage.getItem(k) ?? d; } catch { return d; }
   };
   return {
-    baseUrl: get("yt_url", "https://youtrack.instance/"),
+    baseUrl: get("yt_url", "https://youtrack.instance"),
     token: get("yt_token", ""),
     ids: get("yt_ids", ""),
     sizeField: get("yt_sizefield", "Size"),
