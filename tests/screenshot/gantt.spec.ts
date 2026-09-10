@@ -67,12 +67,11 @@ const tab = (page: Page, name: string) => page.getByRole("tab", { name });
 
 async function build(page: Page): Promise<void> {
   await page.goto("/");
-  // токен — на табе «Подключение»
-  await tab(page, "Подключение").click();
+  // токен — на табе «Настройки»
+  await tab(page, "Настройки").click();
   await page.fill("#token", "perm:test");
   // факт (бар «Начало работ») для моков: дефолтная лямбда ищет «Doing», а история
   // мока содержит «In Progress» — задаём лямбду «первый переход State»
-  await tab(page, "Расчёт").click();
   await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
   // по умолчанию открыт таб «Задачи»
   await tab(page, "Задачи").click();
@@ -119,7 +118,7 @@ test("смена лямбды начала работ пересчитывает
   // build уже поставил лямбду «первый переход State» — факт виден сразу
   await expect(fact).toHaveText("1 к.д. / 1 р.д.");
   // другая лямбда: берём поле Workflow (событие 09-01)
-  await tab(page, "Расчёт").click();
+  await tab(page, "Настройки").click();
   await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'Workflow')?.ts ?? null");
   await tab(page, "Задачи").click();
   await page.getByRole("button", { name: "Построить" }).click();
@@ -137,8 +136,8 @@ test("форма: пустое состояние", async ({ page }) => {
 
 test("валидация: пустые обязательные поля подсвечены", async ({ page }) => {
   await page.goto("/");
-  // URL и токен — на табе «Подключение»
-  await tab(page, "Подключение").click();
+  // URL и токен — на табе «Настройки»
+  await tab(page, "Настройки").click();
   await page.fill("#baseUrl", "");
   // поля и «Построить» неактивны до загрузки — валидация срабатывает на «Загрузить задачи»
   await tab(page, "Задачи").click();
@@ -239,7 +238,7 @@ test("лямбда размера: тикет без Size — дефолт 10 д
   // предупреждений нет
   await expect(page.locator(".problems")).toHaveCount(0);
   // кастомная лямбда: размер = длина summary
-  await tab(page, "Расчёт").click();
+  await tab(page, "Настройки").click();
   await page.fill("#sizeLambda", "(issue, activities) => issue.summary.length > 3 ? 5 : 7");
   await tab(page, "Задачи").click();
   await page.getByRole("button", { name: "Построить" }).click();
@@ -251,7 +250,7 @@ test("лямбда размера: тикет без Size — дефолт 10 д
 test("сломанная лямбда: тост и предупреждение, расчёт не падает", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
-  await tab(page, "Расчёт").click();
+  await tab(page, "Настройки").click();
   await page.fill("#sizeLambda", "(issue, activities) => { throw new Error('boom'); }");
   await tab(page, "Задачи").click();
   await page.getByRole("button", { name: "Построить" }).click();

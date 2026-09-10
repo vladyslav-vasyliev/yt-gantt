@@ -21,7 +21,7 @@ async function mock(page: Page): Promise<void> {
 
 async function build(page: Page): Promise<void> {
   await page.goto("/");
-  await page.getByRole("tab", { name: "Подключение" }).click();
+  await page.getByRole("tab", { name: "Настройки" }).click();
   await page.fill("#token", "perm:test");
   await page.getByRole("tab", { name: "Задачи" }).click();
   await page.fill("#ids", "1");

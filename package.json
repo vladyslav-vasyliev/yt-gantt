@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:screenshot": "playwright test",
+    "test:screenshot:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test"
   },
