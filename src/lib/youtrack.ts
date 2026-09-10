@@ -31,7 +31,7 @@ function parseFieldValue(value: unknown): string | null {
 }
 
 export async function fetchIssue(
-  base: string, token: string, id: string, sizeField: string
+  base0: string, token: string, id: string, sizeField: string
 ): Promise<Issue> {
   const fields =
     "idReadable,summary,resolved," +
@@ -39,8 +39,10 @@ export async function fetchIssue(
     "projectCustomField(field(name),bundle(values(name,localizedName))))," +
     "links(linkType(name,sourceToTarget,targetToSource),direction,issues(idReadable))";
   const qs = "fields=" + encodeURIComponent(fields);
+  // база без хвостовых слэшей — иначе в прямом режиме получится «//api/…»
+  const base = base0.replace(/\/+$/, "");
   const url = PROXY
-    ? `/yt/api/issues/${encodeURIComponent(id)}?${qs}&__base=${encodeURIComponent(base)}`
+    ? `/yt/api/issues/${encodeURIComponent(id)}?${qs}&__base=${encodeURIComponent(base0)}`
     : `${base}/api/issues/${encodeURIComponent(id)}?${qs}`;
   const resp = await fetch(url, {
     headers: { "Accept": "application/json", "Authorization": "Bearer " + token.trim() },
@@ -109,7 +111,8 @@ async function fetchHistoryEvents(base: string, token: string, id: string): Prom
   const headers = { "Accept": "application/json", "Authorization": "Bearer " + token.trim() };
   const events: RawHistoryEvent[] = [];
   const pageSize = 100;
-  for (let skip = 0; ; skip += pageSize) {
+  let exhausted = false; // последняя страница короче pageSize — данные кончились
+  for (let skip = 0; !exhausted; skip += pageSize) {
     const qs = new URLSearchParams({
       fields, categories: "CustomFieldCategory", reverse: "false",
       $top: String(pageSize), $skip: String(skip),
@@ -129,11 +132,12 @@ async function fetchHistoryEvents(base: string, token: string, id: string): Prom
       const page: RawHistoryEvent[] = await resp.json();
       if (!Array.isArray(page)) throw new Error("Некорректный ответ API истории: ожидался массив");
       events.push(...page);
-      if (page.length < pageSize) return { events, error: null };
+      if (page.length < pageSize) exhausted = true;
     } catch (e) {
       return { events: null, error: e instanceof Error ? e.message : "сетевая ошибка" };
     }
   }
+  return { events, error: null };
 }
 
 // нормализованная история тикета: скачивается один раз при загрузке,
@@ -169,7 +173,9 @@ export function computeActualStart(it: Issue, stateField: string, startStatus: s
   return found;
 }
 
-// батч-загрузка отсутствующих в кеше (вместе с историей изменений), с прогрессом
+// батч-загрузка отсутствующих в кеше (вместе с историей изменений), с прогрессом.
+// ctx.historyFn — точка расширения для тестов: чем качать историю (по умолчанию
+// fetchIssueHistory); функция НЕ должна бросать — ошибки возвращаются в error.
 export async function fetchBatch(
   ids: string[],
   ctx: LoadContext,
@@ -178,6 +184,7 @@ export async function fetchBatch(
 ): Promise<void> {
   // каждая сетевая ошибка — и в problems, и в Toast-канал
   const report = (msg: string): void => { problems.push(msg); ctx.onNetworkError?.(msg); };
+  const historyFn = ctx.historyFn ?? fetchIssueHistory;
   const missing = [...new Set(ids)].filter((id) => !cache.has(id));
   for (let i = 0; i < missing.length; i += FETCH_CONCURRENCY) {
     const chunk = missing.slice(i, i + FETCH_CONCURRENCY);
@@ -187,7 +194,7 @@ export async function fetchBatch(
     // растягивается в N раз (запрос ~150мс × 5 тикетов последовательно)
     const histories = await Promise.allSettled(
       settled.map((r) => (r.status === "fulfilled"
-        ? fetchIssueHistory(ctx.base, ctx.token, r.value.id)
+        ? historyFn(ctx.base, ctx.token, r.value.id)
         : Promise.resolve(null))));
     for (let j = 0; j < chunk.length; j++) {
       const r = settled[j];

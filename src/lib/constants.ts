@@ -72,6 +72,8 @@ export interface LoadContext {
   base: string;
   token: string;
   sizeField: string;
+  /** точка расширения для тестов: чем качать историю (по умолчанию fetchIssueHistory) */
+  historyFn?: (base: string, token: string, id: string) => Promise<{ history: import("./constants").HistoryEvent[]; error: string | null }>;
   // каждая сетевая ошибка уходит сюда (в App — прямиком в Toast)
   onNetworkError?: (message: string) => void;
 }

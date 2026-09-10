@@ -7,6 +7,7 @@ import type { Issue } from "../src/lib/constants";
 // PROXY зависит от location — в node-окружении vitest его нет → прямой запрос невозможен.
 // Для юнит-тестов мокаем global.fetch и проверяем разбор ответов, не URL.
 const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+const mkBase = { id: "A", summary: "", sizeRaw: null, links: [], resolved: false, resolvedAt: null, _fieldValues: [] } as Issue;
 
 describe("fetchIssue", () => {
   beforeEach(() => cache.clear());
@@ -383,6 +384,156 @@ describe("fetchIssue на реальном ответе YouTrack (INFRA-12575)",
     expect(meta.statuses).toContain("Doing");
     expect(meta.statuses).toContain("WaitRelease");
     expect(meta.statuses).not.toContain("Васильев Владислав Владимирович"); // юзеры не статусы
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("corner-case: URLs, ответы не-массивы, сбои fetchBatch, idsWithoutHistory", () => {
+  beforeEach(() => cache.clear());
+
+  it("пагинация истории: >pageSize страниц склеиваются до короткой страницы", async () => {
+    // 250 событий: две полные страницы по 100 и короткая 50-я
+    const mkEvents = (n: number) => Array.from({ length: n }, (_, i) => ({
+      timestamp: Date.parse("2026-01-01T00:00:00Z") + i,
+      field: { customField: { name: "State" } },
+      added: [{ name: `S${i}` }], removed: [],
+    }));
+    const all = mkEvents(250);
+    const calls: number[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (/activities/.test(url)) {
+        const skip = Number(new URL(url, "https://x").searchParams.get("$skip"));
+        calls.push(skip);
+        return ok(all.slice(skip, skip + 100));
+      }
+      return ok({ idReadable: "A-1", summary: "", resolved: null, customFields: [], links: [] });
+    }));
+    const { fetchIssueHistory } = await import("../src/lib/youtrack");
+    const r = await fetchIssueHistory("https://yt.x", "tok", "A-1");
+    expect(r.error).toBeNull();
+    expect(r.history).toHaveLength(250);
+    expect(calls).toEqual([0, 100, 200]); // третья страница короткая — стоп
+  });
+
+  it("пагинация истории: ровно кратное pageSize число событий (2 полные страницы + пустая)", async () => {
+    // 200 событий: вторая страница полная → цикл продолжается, третья пустая → стоп
+    const mkEvents = (n: number) => Array.from({ length: n }, (_, i) => ({
+      timestamp: i, field: { customField: { name: "State" } }, added: [{ name: `S${i}` }], removed: [],
+    }));
+    const all = mkEvents(200);
+    const calls: number[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (/activities/.test(url)) {
+        const skip = Number(new URL(url, "https://x").searchParams.get("$skip"));
+        calls.push(skip);
+        return ok(all.slice(skip, skip + 100));
+      }
+      return ok({ idReadable: "A-1", summary: "", resolved: null, customFields: [], links: [] });
+    }));
+    const { fetchIssueHistory } = await import("../src/lib/youtrack");
+    const r = await fetchIssueHistory("https://yt.x", "tok", "A-1");
+    expect(r.error).toBeNull();
+    expect(r.history).toHaveLength(200);
+    expect(calls).toEqual([0, 100, 200]);
+    vi.unstubAllGlobals();
+  });
+  it("история: не-массив ответа — error с текстом", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) =>
+      /activities/.test(url) ? ok({ unexpected: true }) : ok({ idReadable: "A-1", summary: "", resolved: null, customFields: [], links: [] })));
+    const { fetchIssueHistory } = await import("../src/lib/youtrack");
+    const r = await fetchIssueHistory("https://yt.x", "tok", "A-1");
+    expect(r.history).toEqual([]);
+    expect(r.error).toContain("ожидался массив");
+    vi.unstubAllGlobals();
+  });
+
+  it("fetchBatch: ошибка тикета не 401/403 (500) — report, обход продолжается", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 500 } as Response)));
+    const problems: string[] = [];
+    await expect(fetchBatch(["A-1"],
+      { base: "https://yt.x", token: "t", sizeField: "Size" }, problems)).resolves.toBeUndefined();
+    expect(problems[0]).toContain("HTTP 500");
+    vi.unstubAllGlobals();
+  });
+
+  it("fetchBatch: 403 на тикет — исключение (продолжать бессмысленно)", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 403 } as Response)));
+    const problems: string[] = [];
+    await expect(fetchBatch(["A-1"],
+      { base: "https://yt.x", token: "t", sizeField: "Size" }, problems)).rejects.toMatchObject({ code: 403 });
+    expect(problems[0]).toContain("A-1");
+    vi.unstubAllGlobals();
+  });
+
+  it("fetchBatch: сгенерированный текст «ошибка загрузки» для не-Error reason", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject("строка-причина")));
+    const problems: string[] = [];
+    await expect(fetchBatch(["A-1"],
+      { base: "https://yt.x", token: "t", sizeField: "Size" }, problems)).resolves.toBeUndefined();
+    expect(problems[0]).toContain("ошибка загрузки");
+    vi.unstubAllGlobals();
+  });
+
+  it("idsWithoutHistory: только тикеты без _history", async () => {
+    cache.clear();
+    cache.set("A", { ...mkBase, _history: [{ ts: null, field: "x", added: [], removed: [] }] });
+    cache.set("B", { ...mkBase, id: "B", _history: [] });
+    cache.set("C", { ...mkBase, id: "C" }); // _history undefined
+    const { idsWithoutHistory } = await import("../src/lib/youtrack");
+    expect(idsWithoutHistory([...cache.values()])).toEqual(["B", "C"]);
+  });
+});
+
+describe("fetchBatch — corner-case ветки rejected", () => {
+  beforeEach(() => cache.clear());
+
+  it("история fetch-reject при удачном тикете: problems + _history пуст", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) =>
+      /activities/.test(url)
+        ? Promise.reject(new Error("history net down"))
+        : ok({ idReadable: "A-1", summary: "", resolved: null, customFields: [], links: [] })));
+    const problems: string[] = [];
+    await fetchBatch(["A-1"], { base: "https://yt.x", token: "t", sizeField: "Size" }, problems);
+    expect(cache.get("A-1")!._history).toEqual([]);
+    expect(problems[0]).toContain("history net down");
+    vi.unstubAllGlobals();
+  });
+
+  it("сам тикет fetch-reject c не-Error reason: «ошибка загрузки», без throw", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject("boOM")));
+    const problems: string[] = [];
+    await expect(fetchBatch(["A-1"], { base: "https://yt.x", token: "t", sizeField: "Size" }, problems))
+      .resolves.toBeUndefined();
+    expect(problems[0]).toBe("A-1: ошибка загрузки");
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("fetchBatch — защита от reject'а источника истории (historyFn-инъекция)", () => {
+  beforeEach(() => cache.clear());
+
+  it("h.status === rejected → _history пуст, reason из Error", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => ok({ idReadable: "A-1", summary: "", resolved: null, customFields: [], links: [] })));
+    const problems: string[] = [];
+    // historyFn-инъекция: защита fetchBatch от reject'а источника истории
+    await fetchBatch(["A-1"], {
+      base: "https://yt.x", token: "t", sizeField: "Size",
+      historyFn: () => Promise.reject(new Error("mocked reject")) as never,
+    }, problems);
+    expect(cache.get("A-1")!._history).toEqual([]);
+    expect(problems[0]).toContain("mocked reject");
+    vi.unstubAllGlobals();
+  });
+
+  it("h.status === rejected, reason не Error → «сетевая ошибка»", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => ok({ idReadable: "A-2", summary: "", resolved: null, customFields: [], links: [] })));
+    const problems: string[] = [];
+    await fetchBatch(["A-2"], {
+      base: "https://yt.x", token: "t", sizeField: "Size",
+      historyFn: () => Promise.reject("не ошибка") as never,
+    }, problems);
+    expect(cache.get("A-2")!._history).toEqual([]);
+    expect(problems[0]).toContain("сетевая ошибка");
     vi.unstubAllGlobals();
   });
 });

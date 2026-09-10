@@ -67,9 +67,13 @@ const tab = (page: Page, name: string) => page.getByRole("tab", { name });
 
 async function build(page: Page): Promise<void> {
   await page.goto("/");
-  // токен — на втором табе «Подключение»
+  // токен — на табе «Подключение»
   await tab(page, "Подключение").click();
   await page.fill("#token", "perm:test");
+  // факт (бар «Начало работ») для моков: дефолтная лямбда ищет «Doing», а история
+  // мока содержит «In Progress» — задаём лямбду «первый переход State»
+  await tab(page, "Расчёт").click();
+  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
   // по умолчанию открыт таб «Задачи»
   await tab(page, "Задачи").click();
   await page.fill("#ids", "1");
@@ -112,13 +116,7 @@ test("смена лямбды начала работ пересчитывает
   });
   await build(page);
   const fact = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\./ });
-  // дефолтная лямбда ищет «Doing» — в истории его нет, факта нет
-  await expect(fact).toHaveCount(0);
-  // меняем лямбду: дата начала — первый переход поля State в истории
-  await tab(page, "Расчёт").click();
-  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
-  await tab(page, "Задачи").click();
-  await page.getByRole("button", { name: "Построить" }).click();
+  // build уже поставил лямбду «первый переход State» — факт виден сразу
   await expect(fact).toHaveText("1 к.д. / 1 р.д.");
   // другая лямбда: берём поле Workflow (событие 09-01)
   await tab(page, "Расчёт").click();
@@ -226,12 +224,6 @@ test("масштаб: кнопки «−»/«+» меняют ширину дн�
 test("диаграмма: факт работы — бар факта и длительность к.д./р.д.", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
-  // дефолтная лямбда старта ищет «Doing» — истории с ним нет; задаём лямбду
-  // «первый переход State» — у всех задач появляется факт
-  await tab(page, "Расчёт").click();
-  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
-  await tab(page, "Задачи").click();
-  await page.getByRole("button", { name: "Построить" }).click();
   // у каждой задачи — текст реальной длительности «N к.д. / M р.д.»
   const factText = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\. \/ \d+ р\.д\./ });
   await expect(factText.first()).toBeVisible();
@@ -244,9 +236,9 @@ test("лямбда размера: тикет без Size — дефолт 10 д
   await build(page);
   await expect(page.locator(".summary-row")).toContainText("Задач: 3");
   // дефолтная лямбда размера молча заменяет неизвестное значение на 10 дней —
-  // предупреждений нет (в отличие от прежнего жёстко зашитого fallback)
+  // предупреждений нет
   await expect(page.locator(".problems")).toHaveCount(0);
-  // кастомная лямбда: размер = длина summary / 2 — предупреждение при ошибке
+  // кастомная лямбда: размер = длина summary
   await tab(page, "Расчёт").click();
   await page.fill("#sizeLambda", "(issue, activities) => issue.summary.length > 3 ? 5 : 7");
   await tab(page, "Задачи").click();

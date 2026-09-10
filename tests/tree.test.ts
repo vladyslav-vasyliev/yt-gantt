@@ -72,19 +72,20 @@ describe("schedule — модель «родитель-обёртка»", () => 
 
   it("трёхуровневое дерево: R1(A1(B1,B2),A2) + независимый R2", () => {
     const issues: Issue[] = [
-      mkIssue("R1", 10), mkIssue("A1", 5), mkIssue("B1", 3), mkIssue("B2", 1), mkIssue("A2", 2), mkIssue("R2", 4),
+      mkIssue("R1", 9), mkIssue("A1", 4), mkIssue("B1", 5), mkIssue("B2", 6), mkIssue("B3", 7), mkIssue("A2", 13), mkIssue("R2", 4),
     ];
     issues[0]._kids = ["A1", "A2"];
-    issues[1]._kids = ["B1", "B2"];
+    issues[1]._kids = ["B1", "B2", "B3"];
     schedule(issues, true, true);
     const o = g(issues);
     // B1 стартует одновременно с A1 и R1 (от оси)
     expect(o.B1.s).toBe(o.A1.s);
     expect(o.R1.s).toBe(o.B1.s);
-    // B2 после B1; A1 — обёртка B1..B2
+    // B2 после B1; B3 после B2; A1 — обёртка B1..B2..B3
     expect(o.B2.s > o.B1.e).toBe(true);
+    expect(o.B3.s > o.B2.e).toBe(true);
     expect(o.A1.s).toBe(o.B1.s);
-    expect(o.A1.e).toBe(o.B2.e);
+    expect(o.A1.e).toBe(o.B3.e);
     // A2 после A1; R1 — обёртка A1..A2
     expect(o.A2.s > o.A1.e).toBe(true);
     expect(o.R1.s).toBe(o.A1.s);

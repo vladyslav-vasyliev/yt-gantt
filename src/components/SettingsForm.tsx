@@ -10,8 +10,8 @@
 //   «Подключение» — URL, токен, проект.
 import React, { useState } from "react";
 import {
-  Box, Button, Checkbox, CircularProgress, Divider, FormControlLabel,
-  InputAdornment, Stack, Tab, Tabs, TextField, Tooltip,
+  Box, Button, Checkbox, CircularProgress, FormControlLabel,
+  InputAdornment, Stack, Tab, Tabs, TextField, Tooltip, Typography,
 } from "@mui/material";
 import ReplayIcon from "@mui/icons-material/Replay";
 import { parseIds, type AppSettings } from "../lib/constants";
@@ -76,10 +76,10 @@ export default function SettingsForm({
       <Tabs value={tab} onChange={(_, v: string) => setTab(v)}>
         {/* таб «Задачи» — первый и открыт по умолчанию */}
         <Tab value="issues" label="Задачи" />
-        {/* таб «Расчёт» — лямбды размера и начала работ */}
-        <Tab value="calc" label="Расчёт" />
-        {/* таб «Подключение» — третий в списке */}
-        <Tab value="connection" label="Подключение" />
+        {/* таб «Настройки» — лямбды размера и начала работ */}
+        <Tab value="settings" label="Настройки" />
+        {/* таб «Настройки» — лямбды размера и начала работ */}
+        <Tab value="info" label="Описание" />
       </Tabs>
 
       {tab === "issues" && (
@@ -87,7 +87,7 @@ export default function SettingsForm({
           <Stack direction="row" spacing={2} sx={{ alignItems: "flex-end" }}>
             <TextField
               id="ids" label="Идентификаторы issue (через пробел, запятую или с новой строки; можно номера без префикса)"
-              multiline rows={3} fullWidth
+              multiline minRows={1} maxRows={5} fullWidth
               value={settings.ids} onChange={(e) => f("ids")(e.target.value)}
               placeholder="101, 102&#10;103"
               error={!!errIds} helperText={errIds}
@@ -115,11 +115,11 @@ export default function SettingsForm({
               </Tooltip>
               <FormControlLabel control={
                 <Checkbox size="small" checked={settings.skipWeekends}
-                          onChange={(e) => set({ skipWeekends: e.target.checked })} />
+                  onChange={(e) => set({ skipWeekends: e.target.checked })} />
               } label="пропускать выходные" />
               <FormControlLabel control={
                 <Checkbox size="small" checked={settings.startToday}
-                          onChange={(e) => set({ startToday: e.target.checked })} />
+                  onChange={(e) => set({ startToday: e.target.checked })} />
               } label="начинать сегодня (иначе — с понедельника текущей недели)" />
               <Button variant="contained" onClick={onBuild} disabled={busy || !loaded}>
                 Построить
@@ -129,8 +129,24 @@ export default function SettingsForm({
         </Stack>
       )}
 
-      {tab === "calc" && (
+      {tab === "settings" && (
         <Stack spacing={3} sx={{ pt: 2 }}>
+          <Typography variant="h6">Подключение</Typography>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ pt: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <TextField id="baseUrl" label="YouTrack URL" sx={{ width: 280 }}
+              value={settings.baseUrl} onChange={(e) => f("baseUrl")(e.target.value)}
+              placeholder="https://youtrack.example.com"
+              error={!!errBaseUrl} helperText={errBaseUrl} />
+            <TextField id="token" label="Permanent token" type="password" sx={{ width: 260 }}
+              value={settings.token} onChange={(e) => f("token")(e.target.value)}
+              placeholder="perm:…"
+              error={!!errToken} helperText={errToken} />
+            <TextField id="projectPrefix" label="Проект" sx={{ width: 120 }}
+              value={settings.project} onChange={(e) => f("project")(e.target.value)}
+              placeholder="напр. INFRA" />
+          </Stack>
+
+          <Typography variant="h6">Конфигурация</Typography>
           <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
             <TextField
               id="sizeLambda" label="Размер (дни)" multiline minRows={6} maxRows={20} fullWidth
@@ -142,7 +158,7 @@ export default function SettingsForm({
                     <InputAdornment position="end">
                       <Tooltip title="Вернуть лямбду по умолчанию (Size → дни)">
                         <Button size="small" aria-label="Сбросить лямбду размера"
-                                onClick={onSizeLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
+                          onClick={onSizeLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
                           сброс
                         </Button>
                       </Tooltip>
@@ -156,14 +172,14 @@ export default function SettingsForm({
             <TextField
               id="startLambda" label="Начало работ" multiline minRows={6} maxRows={20} fullWidth
               value={startLambda} onChange={(e) => onStartLambdaChange(e.target.value)}
-              error={!!startErr} helperText={startErr ?? "(issue, activities) ⇒ дата начала работ или null — фактическая дата начала работ"}
+              error={!!startErr} helperText={startErr ?? "(issue, activities) ⇒ дата начала работ Date или null — фактическая дата начала работ"}
               slotProps={{
                 input: {
                   endAdornment: (
                     <InputAdornment position="end">
                       <Tooltip title="Вернуть лямбду по умолчанию (переход в статус Doing)">
                         <Button size="small" aria-label="Сбросить лямбду начала работ"
-                                onClick={onStartLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
+                          onClick={onStartLambdaReset} startIcon={<ReplayIcon fontSize="small" />}>
                           сброс
                         </Button>
                       </Tooltip>
@@ -173,31 +189,27 @@ export default function SettingsForm({
                 },
               }} />
           </Stack>
-          <Divider/>
-          <div className="hint">
-            Лямбды получают <code>issue</code> —{" "}
-            {"{ id, summary, sizeRaw, resolved, resolvedAt, links, customFields }"} (customFields —
-            словарь «имя поля → значение») и <code>activities</code> — историю изменений{" "}
-            {"[{ ts, field, added[], removed[] }]"}. Размер должен вернуть число дней,
-            начало работ — Date или null. Ошибки компиляции подсвечиваются; сломанная лямбда
-            заменяется дефолтной, текст ошибки попадёт в предупреждения под диаграммой.
-          </div>
         </Stack>
       )}
 
-      {tab === "connection" && (
-        <Stack direction="row" spacing={2} useFlexGap sx={{ pt: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <TextField id="baseUrl" label="YouTrack URL" sx={{ width: 280 }}
-            value={settings.baseUrl} onChange={(e) => f("baseUrl")(e.target.value)}
-            placeholder="https://youtrack.example.com"
-            error={!!errBaseUrl} helperText={errBaseUrl} />
-          <TextField id="token" label="Permanent token" type="password" sx={{ width: 260 }}
-            value={settings.token} onChange={(e) => f("token")(e.target.value)}
-            placeholder="perm:…"
-            error={!!errToken} helperText={errToken} />
-          <TextField id="projectPrefix" label="Проект" sx={{ width: 120 }}
-            value={settings.project} onChange={(e) => f("project")(e.target.value)}
-            placeholder="напр. INFRA" />
+
+      {tab === "info" && (
+        <Stack>
+          <Typography variant="body1" sx={{ marginTop: 2 }}>
+            Дочерние тикеты подтягиваются по выбранному типу связи (рекурсивно, всё поддерево) и
+            показываются под своими родителями. Расписание — модель «родитель-обёртка», факты важнее
+            плана: задача рисуется от даты перехода в «Статус начала работы», завершённая — до даты
+            Resolved (размер из «Size» — план только для задач без факта). Родитель отсчитывается
+            от момента начала работ на дочерней, над которой раньше других начали работу. Без факта:
+            первый ребёнок стартует одновременно с родителем, следующий sibling — после предыдущего,
+            корни — от начала оси. Имя связи — такое, под которым дети видны на тикете (для
+            стандартной иерархии это <code>parent for</code>). Если поле Size пустое или
+            неизвестно — задача считается <b>M</b> (10 дн.).
+          </Typography>
+
+          <Typography variant="body1" sx={{ marginTop: 2 }}>
+            Настройки хранятся в localStorage. Запуск прокси для обхода CORS: <code>node server.cjs</code> → http://localhost:8414
+          </Typography>
         </Stack>
       )}
     </Box>

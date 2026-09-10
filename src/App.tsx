@@ -1,6 +1,6 @@
 // Главный компонент: состояние формы, валидации, сборка данных, тост-уведомления.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Stack, ThemeProvider, createTheme } from "@mui/material";
+import { Alert, AppBar, Stack, ThemeProvider, Toolbar, Typography, createTheme } from "@mui/material";
 import SettingsForm from "./components/SettingsForm";
 import GanttChart from "./components/GanttChart";
 import {
@@ -262,31 +262,14 @@ export default function App(): React.ReactElement {
       <ToastStack items={toasts} onClose={closeToast} />
 
       {/* шапка: продуктовое название, навигации нет — бургер не нужен */}
-      <header className="topbar">
-        <div className="shell topbar-in">
-          <span className="brand">YouTrack&nbsp;→&nbsp;Gantt</span>
-        </div>
-      </header>
+      <AppBar position="static">
+        <Toolbar sx={{ justifyContent: 'center' }}>
+          <Typography variant="h5" component="div" sx={{ margin: 2 }}>Диаграмма Ганта</Typography>
+
+        </Toolbar>
+      </AppBar>
 
       <main className="shell content">
-        {/* шапка контент-зоны: заголовок раздела; основные действия — справа */}
-        <div className="content-head">
-          <h1>Диаграмма Ганта</h1>
-          <span className="content-head-note">два шага: загрузить задачи → выбрать поля и построить</span>
-        </div>
-
-        <div className="hint">
-          Дочерние тикеты подтягиваются по выбранному типу связи (рекурсивно, всё поддерево) и
-          показываются под своими родителями. Расписание — модель «родитель-обёртка», факты важнее
-          плана: задача рисуется от даты перехода в «Статус начала работы», завершённая — до даты
-          Resolved (размер из «Size» — план только для задач без факта). Родитель отсчитывается
-          от момента начала работ на дочерней, над которой раньше других начали работу. Без факта:
-          первый ребёнок стартует одновременно с родителем, следующий sibling — после предыдущего,
-          корни — от начала оси. Имя связи — такое, под которым дети видны на тикете (для
-          стандартной иерархии это <code>parent for</code>). Если поле Size пустое или
-          неизвестно — задача считается <b>M</b> (10 дн.).
-        </div>
-
         <SettingsForm
           settings={settings}
           setSettings={set}
@@ -335,13 +318,6 @@ export default function App(): React.ReactElement {
           </section>
         )}
       </main>
-
-      {/* подвал: лаконично, минимальный набор ссылок */}
-      <footer className="footer">
-        <div className="shell footer-in">
-          <span>Токен хранится только в localStorage · Запуск: <code>node server.cjs</code> → http://localhost:8414</span>
-        </div>
-      </footer>
     </ThemeProvider>
   );
 }

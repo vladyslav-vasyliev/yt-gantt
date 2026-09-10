@@ -15,13 +15,6 @@ body { margin: 0; background: var(--bg); color: var(--text);
 /* единая колонка контента: по гайду боковой отступ одинаков всегда — 48px */
 .shell { max-width: 1496px; margin: 0 auto; padding: 0 48px; }
 
-/* шапка */
-.topbar { position: sticky; top: 0; z-index: 20;
-          background: var(--surface); border-bottom: 1px solid var(--border); }
-.topbar-in { height: var(--bar-h); display: flex; align-items: baseline; gap: 16px; }
-.brand { align-self: center; font-size: 18px; font-weight: 600; }
-.brand-note { color: var(--muted); font-size: 13px; }
-
 /* контент-зона */
 .content { padding-top: 24px; padding-bottom: 48px; }
 .content-head { display: flex; align-items: baseline; justify-content: space-between;
@@ -36,9 +29,6 @@ body { margin: 0; background: var(--bg); color: var(--text);
 /* визуальные группы настроек (вложенный fieldset в табе «Задачи») */
 fieldset.group { margin: 0; min-width: 0; border: 0; padding: 0; }
 .group-title { color: var(--muted); font-weight: 600; font-size: 13px; margin-bottom: 12px; }
-
-.hint { color: var(--muted); font-size: 12px; margin: 0 0 16px; padding: 0 8px; }
-.hint code { color: var(--text); background: #e4e9f1; padding: 1px 4px; border-radius: 4px; }
 
 /* пустое состояние — заглушка вместо белой страницы */
 .empty { text-align: center; padding: 48px 24px; }
@@ -79,16 +69,6 @@ fieldset.group { margin: 0; min-width: 0; border: 0; padding: 0; }
                         height: 50%; width: 2px; border-radius: 1px;
                         background: var(--border); }
 .gantt-resizer:hover::after { background: var(--accent); }
-
-/* подвал: лаконичный, минимальный набор ссылок */
-.footer { background: var(--surface); border-top: 1px solid var(--border); }
-.footer-in { min-height: var(--bar-h); display: flex; align-items: center;
-             justify-content: space-between; gap: 16px; flex-wrap: wrap;
-             padding-top: 12px; padding-bottom: 12px;
-             color: var(--muted); font-size: 12px; }
-.footer-in code { background: #e4e9f1; padding: 1px 4px; border-radius: 4px; }
-.footer-in a { color: var(--muted); }
-.footer-in a:hover { color: var(--text); }
 
 /* адаптивность: на узких экранах отступ меньше */
 @media (max-width: 768px) {

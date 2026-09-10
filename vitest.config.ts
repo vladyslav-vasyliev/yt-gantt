@@ -7,5 +7,11 @@ export default defineConfig({
     include: ["tests/**/*.test.{ts,tsx}"],
     environment: "node",
     globals: false,
+    coverage: {
+      provider: "v8",
+      include: ["src/lib/**"],
+      reporter: ["text", "html"],
+      thresholds: { lines: 100, statements: 100 },
+    },
   },
 });
