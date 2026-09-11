@@ -11,6 +11,13 @@ import {
   loadLabelW, saveLabelW, workdaysBetween, type Issue,
 } from "../lib/constants";
 
+// день без времени: координаты и длины баров считаем по календарным дням,
+// иначе время фактического старта (напр. 13:00) даёт сдвиг на день, когда
+// начало оси нормализовано к полуночи
+const atMidnight = (d: Date): Date => {
+  const x = new Date(d); x.setHours(0, 0, 0, 0); return x;
+};
+
 // строки для отображения: выкидываем поддеревья свёрнутых родителей
 export function visibleRows(ordered: Issue[], collapsed: ReadonlySet<string>): Issue[] {
   const out: Issue[] = [];
@@ -41,8 +48,8 @@ function geometry(ordered: Issue[], dayPx: number, labelW: number): Geometry | n
     const f = factSpan(i, today);
     if (f) spans.push({ s: f.start, e: f.end });
   }
-  const min = spans.reduce((m, x) => (x.s < m ? x.s : m), spans[0].s);
-  const max = spans.reduce((m, x) => (x.e > m ? x.e : m), spans[0].e);
+  const min = atMidnight(spans.reduce((m, x) => (x.s < m ? x.s : m), spans[0].s));
+  const max = atMidnight(spans.reduce((m, x) => (x.e > m ? x.e : m), spans[0].e));
   const totalDays = Math.round((max.getTime() - min.getTime()) / 86400000) + 1;
   return {
     min, totalDays, labelW,
@@ -188,8 +195,8 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
     // бар оценки (план по Size): верхняя дорожка строки
     const estStart = it.estStart ?? it.start!;
     const estEnd = it.estEnd ?? it.end!;
-    const estIdx0 = Math.round((estStart.getTime() - min.getTime()) / 86400000);
-    const estLen = Math.round((estEnd.getTime() - estStart.getTime()) / 86400000) + 1;
+    const estIdx0 = Math.round((atMidnight(estStart).getTime() - min.getTime()) / 86400000);
+    const estLen = Math.round((atMidnight(estEnd).getTime() - atMidnight(estStart).getTime()) / 86400000) + 1;
     const ex = estIdx0 * dayPx;
     const ew = Math.max(estLen * dayPx - 3, 6);
 
@@ -197,8 +204,8 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
     const fact = factSpan(it, now);
     const calD = fact ? calendarDaysBetween(fact.start, fact.end) : 0;
     const workD = fact ? workdaysBetween(fact.start, fact.end) : 0;
-    const fIdx0 = fact ? Math.round((fact.start.getTime() - min.getTime()) / 86400000) : 0;
-    const fIdx1 = fact ? Math.round((fact.end.getTime() - min.getTime()) / 86400000) : 0;
+    const fIdx0 = fact ? Math.round((atMidnight(fact.start).getTime() - min.getTime()) / 86400000) : 0;
+    const fIdx1 = fact ? Math.round((atMidnight(fact.end).getTime() - min.getTime()) / 86400000) : 0;
     const fx = fIdx0 * dayPx;
     const fw = Math.max((fIdx1 - fIdx0) * dayPx + dayPx - 3, 6);
 

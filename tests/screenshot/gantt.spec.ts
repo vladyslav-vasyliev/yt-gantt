@@ -234,10 +234,20 @@ test("диаграмма: сценарий INFRA — родитель от са�
   const x14 = await axisX("14 сент");
   const dayPx = (x14 - x07) / 7;
   const xOn = (day: number): number => x07 - 3 + (day - 7) * dayPx;
+  const planBarX = async (id: string): Promise<number> =>
+    Number(await page.locator("tr").filter({ hasText: id })
+      .locator("[data-tid='gantt-svg'] rect[y='5']").getAttribute("x"));
+
   const factBarX = async (id: string): Promise<number> =>
     Number(await page.locator("tr").filter({ hasText: id })
       .locator("[data-tid='gantt-svg'] rect[y='19']").getAttribute("x"));
 
+  expect(await planBarX("INFRA-1")).toBeCloseTo(xOn(7), 0);  // 07.09
+  expect(await planBarX("INFRA-2")).toBeCloseTo(xOn(7), 0);  // 07.09
+  expect(await planBarX("INFRA-3")).toBeCloseTo(xOn(8), 0);  // 08.09
+  expect(await planBarX("INFRA-4")).toBeCloseTo(xOn(9), 0);  // 09.09
+  expect(await planBarX("INFRA-5")).toBeCloseTo(xOn(14), 0);  // 14.09
+  
   expect(await factBarX("INFRA-1")).toBeCloseTo(xOn(7), 0);  // 07.09
   expect(await factBarX("INFRA-2")).toBeCloseTo(xOn(7), 0);  // 07.09
   expect(await factBarX("INFRA-3")).toBeCloseTo(xOn(8), 0);  // 08.09
