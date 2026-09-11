@@ -14,15 +14,15 @@ async function mockYouTrack(page: Page, opts?: { resolved?: boolean; withHistory
   const resolved = opts?.resolved ?? false;
   const withHistory = opts?.withHistory ?? true;
 
-  // корень вводится как «1» → запрос на /issues/1, ответ с idReadable INFRA-1
-  await page.route("**/yt/api/issues/1?*", (route) =>
+  // корень вводится как «1» → запрос на /issues/INFRA-1, ответ с idReadable INFRA-1
+  await page.route("**/yt/api/issues/INFRA-1?*", (route) =>
     route.fulfill(mkIssue({
       idReadable: "INFRA-1",
       summary: "Родительская задача: подготовить релиз",
       resolved: resolved ? "2026-09-10T00:00:00.000Z" : null,
       customFields: [
         { name: "Size", value: { name: "L" } },
-        { name: "State", value: { name: "In Progress" } },
+        { name: "State", value: { name: "Doing" } },
       ],
       links: [{
         direction: "OUTBOUND",
@@ -51,12 +51,30 @@ async function mockYouTrack(page: Page, opts?: { resolved?: boolean; withHistory
 
   if (withHistory) {
     // История пользовательских полей через документированный activities endpoint.
-    await page.route("**/yt/api/issues/**/activities?*", (route) =>
+    await page.route("**/yt/api/issues/INFRA-1/activities?*", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          { timestamp: "2026-09-05T09:00:00Z", field: { name: "State" }, added: [{ name: "Open" }], removed: [] },
+          { timestamp: "2026-09-06T10:00:00Z", field: { name: "State" }, added: [{ name: "Doing" }], removed: [{ name: "Open" }] },
+        ]),
+      }));
+    // История пользовательских полей через документированный activities endpoint.
+    await page.route("**/yt/api/issues/INFRA-2/activities?*", (route) =>
       route.fulfill({
         contentType: "application/json",
         body: JSON.stringify([
           { timestamp: "2026-09-04T09:00:00Z", field: { name: "State" }, added: [{ name: "Open" }], removed: [] },
-          { timestamp: "2026-09-04T10:00:00Z", field: { name: "State" }, added: [{ name: "In Progress" }], removed: [{ name: "Open" }] },
+          { timestamp: "2026-09-07T10:00:00Z", field: { name: "State" }, added: [{ name: "Doing" }], removed: [{ name: "Open" }] },
+        ]),
+      }));
+    // История пользовательских полей через документированный activities endpoint.
+    await page.route("**/yt/api/issues/INFRA-3/activities?*", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          { timestamp: "2026-09-06T09:00:00Z", field: { name: "State" }, added: [{ name: "Open" }], removed: [] },
+          { timestamp: "2026-09-09T10:00:00Z", field: { name: "State" }, added: [{ name: "Doing" }], removed: [{ name: "Open" }] },
         ]),
       }));
   }
@@ -70,12 +88,9 @@ async function build(page: Page): Promise<void> {
   // токен — на табе «Настройки»
   await tab(page, "Настройки").click();
   await page.fill("#token", "perm:test");
-  // факт (бар «Начало работ») для моков: дефолтная лямбда ищет «Doing», а история
-  // мока содержит «In Progress» — задаём лямбду «первый переход State»
-  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
   // по умолчанию открыт таб «Задачи»
   await tab(page, "Задачи").click();
-  await page.fill("#ids", "1");
+  await page.fill("#ids", "INFRA-1");
   // шаг 1: загрузка тикетов, шаг 2: построение по выбранным полям
   await page.getByRole("button", { name: "Загрузить задачи" }).click();
   const buildBtn = page.getByRole("button", { name: "Построить" });
@@ -94,12 +109,12 @@ test.beforeEach(async ({ context, page }) => {
 
 test("смена лямбды начала работ пересчитывает факт без повторной загрузки истории", async ({ page }) => {
   await mockYouTrack(page);
-  await page.route("**/yt/api/issues/1?*", (route) => route.fulfill(mkIssue({
+  await page.route("**/yt/api/issues/INFRA-1?*", (route) => route.fulfill(mkIssue({
     idReadable: "INFRA-1", summary: "Field selection", resolved: null, links: [],
     customFields: [
       { name: "Size", value: { name: "M" } },
-      { name: "State", value: { name: "In Progress" } },
-      { name: "Workflow", value: { name: "In Progress" } },
+      { name: "State", value: { name: "Doing" } },
+      { name: "Workflow", value: { name: "Doing" } },
     ],
   })));
   let historyRequests = 0;
@@ -109,14 +124,14 @@ test("смена лямбды начала работ пересчитывает
     expect(params.get("categories")).toBe("CustomFieldCategory");
     expect(params.get("fields")).toContain("customField(name)");
     await route.fulfill(mkIssue([
-      { timestamp: Date.parse("2026-09-04T10:00:00Z"), field: { customField: { name: "State" } }, added: { name: "In Progress" } },
-      { timestamp: Date.parse("2026-09-01T10:00:00Z"), field: { customField: { name: "Workflow" } }, added: [{ name: "In Progress" }] },
+      { timestamp: Date.parse("2026-09-04T10:00:00Z"), field: { customField: { name: "State" } }, added: { name: "Doing" } },
+      { timestamp: Date.parse("2026-09-01T10:00:00Z"), field: { customField: { name: "Workflow" } }, added: [{ name: "Doing" }] },
     ]));
   });
   await build(page);
   const fact = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\./ });
   // build уже поставил лямбду «первый переход State» — факт виден сразу
-  await expect(fact).toHaveText("1 к.д. / 1 р.д.");
+  await expect(fact).toHaveText("4 к.д. / 4 р.д.");
   // другая лямбда: берём поле Workflow (событие 09-01)
   await tab(page, "Настройки").click();
   await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'Workflow')?.ts ?? null");

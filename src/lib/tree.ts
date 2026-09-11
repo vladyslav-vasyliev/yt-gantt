@@ -200,7 +200,8 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       for (const k of ownKids) {
         const kAnchor = prevEnd ? dayAfter(prevEnd) : new Date(anchor);
         const r = place(k, kAnchor, stack);
-        if (!minStart || r.start < minStart) minStart = new Date(r.start);
+        if (!minStart || r.start < minStart)
+          minStart = new Date(r.start);
         if (k.actualStart && (!earliestFact || k.actualStart < earliestFact))
           earliestFact = new Date(k.actualStart);
         prevEnd = r.end;
