@@ -63,6 +63,22 @@ YouTrack — так браузер не упирается в CORS. Без пр�
 Адрес YouTrack и token задаются на табе «Настройки» и хранятся только
 в localStorage браузера.
 
+## Docker
+
+Multi-stage `Dockerfile`: собирает статику (`npm run build`) и запускает
+`server.cjs` (прокси `/yt` + раздача `dist/`).
+
+```bash
+docker build -t youtrack-gantt .
+docker run --rm -p 8414:8414 youtrack-gantt
+# → http://localhost:8414
+```
+
+Сервер внутри контейнера слушает `HOST=0.0.0.0` (в образе задано), порт — `PORT`
+(по умолчанию 8414). Наружу лучше выставлять за reverse-proxy с TLS на том же
+домене, что и приложение (прокси `/yt` работает только same-origin):
+`docker run -e PORT=8414 -p 127.0.0.1:8414:8414 youtrack-gantt`.
+
 ## Режим разработки
 
 ```bash

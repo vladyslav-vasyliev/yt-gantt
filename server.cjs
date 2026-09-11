@@ -2,9 +2,13 @@
 // YouTrack Gantt — статика собранного React-приложения (vite build → dist/)
 // + прокси /yt → YouTrack (обход CORS). Без зависимостей.
 //
-//   node server.js                 → http://localhost:8414 (раздаёт dist/)
-//   npm run build                  → собрать фронт перед запуском
-//   npm run dev                    → Vite dev-сервер на :5173 (проксирует /yt сюда)
+//   node server.cjs                 → http://localhost:8414 (раздаёт dist/)
+//   npm run build                   → собрать фронт перед запуском
+//   npm run dev                     → Vite dev-сервер на :5173 (проксирует /yt сюда)
+//
+// Переменные окружения:
+//   PORT — порт (по умолчанию 8414)
+//   HOST — адрес прослушивания (по умолчанию 127.0.0.1; для Docker — 0.0.0.0)
 "use strict";
 
 const http = require("http");
@@ -14,6 +18,7 @@ const path = require("path");
 const { URL } = require("url");
 
 const PORT = Number(process.env.PORT) || 8414;
+const HOST = process.env.HOST || "127.0.0.1";
 const ROOT = path.join(__dirname, "dist");
 
 const MIME = {
@@ -121,6 +126,6 @@ function handle(req, res) {
   });
 }
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`YouTrack Gantt: http://localhost:${PORT}  (dist/)`);
+server.listen(PORT, HOST, () => {
+  console.log(`YouTrack Gantt: http://${HOST}:${PORT}  (dist/)`);
 });
