@@ -193,8 +193,9 @@ describe("schedule — модель «родитель-обёртка»", () => 
       K2.actualStart = new Date(2026, 7, 3); // 2026-08-03, понедельник
       schedule([P, K1, K2], true, true);
       expect(f(P.start!)).toBe("2026-08-03");
-      // конец родителя — по-прежнему конец последнего размещённого ребёнка
-      expect(f(P.end!)).toBe(f(K2.end!));
+      // конец родителя — максимум по всем детям (K1 стартует позже от оси)
+      const latest = f(K1.end!) >= f(K2.end!) ? f(K1.end!) : f(K2.end!);
+      expect(f(P.end!)).toBe(latest);
     });
 
     it("завершение родителя — не раньше самой поздней даты завершения детей", () => {
@@ -213,6 +214,36 @@ describe("schedule — модель «родитель-обёртка»", () => 
       schedule([P, K1, K2], true, true);
       expect(f(P.start!)).toBe("2026-08-03"); // от самой ранней начатой
       expect(f(P.end!)).toBe("2026-08-14");   // до самой поздней завершённой
+    });
+
+    it("план-конец родителя — максимум по всем потомкам, а не по последнему ребёнку", () => {
+      // K1 завершена позже (20.09), K2 — последняя по порядку, но раньше (06.09):
+      // раньше брался конец K2, и родитель «закрывался» 06.09 вместо 20.09
+      const P = mkIssue("P", 10);
+      const K1 = mkIssue("K1", 2);
+      const K2 = mkIssue("K2", 2);
+      P._kids = ["K1", "K2"];
+      K1.actualStart = new Date(2026, 8, 1);
+      K1.resolved = true; K1.actualEnd = new Date(2026, 8, 20);
+      K2.actualStart = new Date(2026, 8, 5);
+      K2.resolved = true; K2.actualEnd = new Date(2026, 8, 6);
+      schedule([P, K1, K2], true, true);
+      expect(f(P.end!)).toBe("2026-09-20");     // не меньше позднего потомка
+      expect(f(P.estEnd!)).toBe("2026-09-20");  // плановая дата завершения на графике
+    });
+
+    it("план-конец родителя >= конца внука любого уровня вложенности", () => {
+      // R → A → B; B завершается 30.09 — конец R тоже не раньше 30.09
+      const R = mkIssue("R", 10);
+      const A = mkIssue("A", 10);
+      const B = mkIssue("B", 2);
+      R._kids = ["A"]; A._kids = ["B"];
+      B.actualStart = new Date(2026, 8, 1);
+      B.resolved = true; B.actualEnd = new Date(2026, 8, 30);
+      schedule([R, A, B], true, true);
+      expect(f(A.end!)).toBe("2026-09-30");
+      expect(f(R.end!)).toBe("2026-09-30");
+      expect(f(R.estEnd!)).toBe("2026-09-30");
     });
 
     it("сценарий INFRA: родитель стартует от самого раннего начала среди себя и детей", () => {

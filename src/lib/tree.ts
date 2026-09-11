@@ -129,9 +129,9 @@ export interface Placed { start: Date; end: Date }
 //   первый ребёнок — одновременно с родителем;
 //   каждый следующий sibling — после конца предыдущего (каскад внутри поддерева);
 //   задача не взята в работу (нет факта старта и Resolved) — не раньше сегодня;
-//   родитель с детьми — обёртка: отсчёт от начала работ на дочерней, начатой
-//   раньше других (самый ранний факт старта в поддереве), завершение — не раньше
-//   самой поздней даты завершения детей (и не раньше собственного факта конца);
+//   родитель с детьми — обёртка: отсчёт — самый ранний факт старта среди себя
+//   и детей; завершение — не раньше самой поздней даты завершения детей любого
+//   уровня вложенности (и не раньше собственного факта конца);
 //   родитель без детей в выборке — обычная задача со своей длительностью.
 export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boolean): Issue[] {
   const resolved = new Map<string, Placed>();
@@ -201,6 +201,10 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       // самой поздней даты завершения детей: если у родителя есть собственный
       // факт конца (Resolved), берём максимум из него и детей
       let prevEnd: Date | null = null;
+      // самый поздний конец среди детей: у фактов последний по порядку ребёнок
+      // может завершиться раньше предыдущего, поэтому plan-конец родителя =
+      // максимум по всем детям (рекурсивно — по всем потомкам любого уровня)
+      let latestEnd: Date | null = null;
       // изначально — собственный факт старта родителя, дальше добавляем детей
       let earliestFact: Date | null = it.actualStart ? new Date(it.actualStart) : null;
       let minStart: Date | null = null;     // самый ранний старт ребёнка по каскаду
@@ -212,12 +216,14 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
           minStart = new Date(r.start);
         if (k.actualStart && (!earliestFact || k.actualStart < earliestFact))
           earliestFact = new Date(k.actualStart);
+        if (!latestEnd || r.end > latestEnd)
+          latestEnd = new Date(r.end);
         kidFactual = kidFactual || !!factual.get(k.id.toUpperCase());
         allKidsClosed = allKidsClosed && !!closed.get(k.id.toUpperCase());
         prevEnd = r.end;
       }
       start = earliestFact ?? minStart!;
-      end = new Date(prevEnd!);
+      end = new Date(latestEnd!);
       // собственный факт завершения родителя тоже учитываем: бар не может
       // закончиться раньше фактического завершения родительской задачи
       const ownEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
