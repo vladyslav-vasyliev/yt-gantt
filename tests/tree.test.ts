@@ -3,10 +3,22 @@ import { describe, it, expect } from "vitest";
 import { childIdsOf, dfsOrder, schedule } from "../src/lib/tree";
 import type { Issue } from "../src/lib/constants";
 
-const mkIssue = (id: string, days: number, links: Issue["links"] = []): Issue => ({
+const mkIssue = (id: string, days: number | null, links: Issue["links"] = []): Issue => ({
   id, summary: "s-" + id, sizeRaw: null, links,
   resolved: false, resolvedAt: null, _fieldValues: [], days,
 });
+
+// конец бара длительностью days рабочих дней (как внутри schedule при skipWeekends)
+const barEndLocal = (start: Date, days: number): Date => {
+  const end = new Date(start);
+  let left = days - 1;
+  while (left > 0) {
+    end.setDate(end.getDate() + 1);
+    if (end.getDay() === 0 || end.getDay() === 6) continue;
+    left--;
+  }
+  return end;
+};
 
 describe("childIdsOf", () => {
   const L = (dir: string, stt: string, tts: string, ids: string[]) => ({ dir, stt, tts, ids, name: stt });
@@ -216,10 +228,11 @@ describe("schedule — модель «родитель-обёртка»", () => 
       expect(f(P.end!)).toBe("2026-08-14");   // до самой поздней завершённой
     });
 
-    it("план-конец родителя — максимум по всем потомкам, а не по последнему ребёнку", () => {
+    it("без размера план-конец родителя — максимум по всем потомкам, а не по последнему ребёнку", () => {
+      // У родителя размер не задан → план = границы поддерева.
       // K1 завершена позже (20.09), K2 — последняя по порядку, но раньше (06.09):
       // раньше брался конец K2, и родитель «закрывался» 06.09 вместо 20.09
-      const P = mkIssue("P", 10);
+      const P = mkIssue("P", null);
       const K1 = mkIssue("K1", 2);
       const K2 = mkIssue("K2", 2);
       P._kids = ["K1", "K2"];
@@ -232,10 +245,10 @@ describe("schedule — модель «родитель-обёртка»", () => 
       expect(f(P.estEnd!)).toBe("2026-09-20");  // плановая дата завершения на графике
     });
 
-    it("план-конец родителя >= конца внука любого уровня вложенности", () => {
+    it("без размера план-конец родителя >= конца внука любого уровня вложенности", () => {
       // R → A → B; B завершается 30.09 — конец R тоже не раньше 30.09
-      const R = mkIssue("R", 10);
-      const A = mkIssue("A", 10);
+      const R = mkIssue("R", null);
+      const A = mkIssue("A", null);
       const B = mkIssue("B", 2);
       R._kids = ["A"]; A._kids = ["B"];
       B.actualStart = new Date(2026, 8, 1);
@@ -385,13 +398,33 @@ describe("schedule — модель «родитель-обёртка»", () => 
       expect(f(c.estEnd!)).toBe("2026-08-21"); // план Size: 10 рабочих дней
     });
 
-    it("родитель-обёртка: оценка = границам детей", () => {
-      const P = mkIssue("P", 4);
+    it("родитель-обёртка без размера: оценка = границам детей", () => {
+      const P = mkIssue("P", null);
       const K = mkIssue("K", 2);
       P._kids = ["K"];
       schedule([P, K], true, true);
       expect(f(P.estStart!)).toBe(f(K.estStart!));
       expect(f(P.estEnd!)).toBe(f(K.estEnd!));
+    });
+
+    it("родитель с заданным размером: оценка = start + размер (даже меньше детей)", () => {
+      const P = mkIssue("P", 2);
+      const K = mkIssue("K", 20);
+      P._kids = ["K"];
+      schedule([P, K], true, true);
+      // размер задан → плановый бар ровно 2 рабочих дня от старта, не границы детей
+      expect(f(P.estStart!)).toBe(f(K.estStart!));
+      expect(f(P.estEnd!)).not.toBe(f(K.estEnd!));
+      expect(f(P.estEnd!)).toBe(f(barEndLocal(P.estStart!, 2)));
+    });
+
+    it("лист без размера: планового бара нет, для расписания 1 день", () => {
+      const a = mkIssue("A", null);
+      schedule([a], true, true);
+      expect(a.estStart).toBeUndefined();
+      expect(a.estEnd).toBeUndefined();
+      // каскад: без размера задача занимает 1 день
+      expect(a.end!.getTime()).toBe(a.start!.getTime());
     });
   });
 });

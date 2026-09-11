@@ -53,29 +53,30 @@ describe("toLambdaIssue", () => {
 });
 
 describe("callSizeLambda", () => {
-  it("число — округляется; 0 допустим; отрицательное — ошибка и дефолт 10", () => {
+  it("число — округляется; 0 допустим; null — размер не задан", () => {
     const problems: string[] = [];
     expect(callSizeLambda(() => 7.6, mkIssue(), problems)).toBe(8);
     expect(callSizeLambda(() => 0, mkIssue(), problems)).toBe(0);
+    expect(callSizeLambda(() => null, mkIssue(), problems)).toBeNull();
     expect(problems).toHaveLength(0);
-    expect(callSizeLambda(() => -3, mkIssue(), problems)).toBe(10);
+  });
+
+  it("отрицательное, не-число, Infinity/NaN — ошибка и null", () => {
+    const problems: string[] = [];
+    expect(callSizeLambda(() => -3, mkIssue(), problems)).toBeNull();
     expect(problems[0]).toContain("вернула -3");
-    expect(problems[0]).toContain("принят размер 10 дн.");
+    expect(problems[0]).toContain("размер не задан");
+    expect(callSizeLambda(() => "10" as never, mkIssue(), problems)).toBeNull();
+    expect(callSizeLambda(() => Infinity, mkIssue(), problems)).toBeNull();
+    expect(callSizeLambda(() => NaN, mkIssue(), problems)).toBeNull();
+    expect(problems).toHaveLength(4);
   });
 
-  it("не-число, Infinity/NaN — ошибка и дефолт", () => {
+  it("бросок исключения — problems + null; не-Error — тоже", () => {
     const problems: string[] = [];
-    expect(callSizeLambda(() => "10" as never, mkIssue(), problems)).toBe(10);
-    expect(callSizeLambda(() => Infinity, mkIssue(), problems)).toBe(10);
-    expect(callSizeLambda(() => NaN, mkIssue(), problems)).toBe(10);
-    expect(problems).toHaveLength(3);
-  });
-
-  it("бросок исключения — problems + дефолт; не-Error — тоже", () => {
-    const problems: string[] = [];
-    expect(callSizeLambda(() => { throw new Error("boom"); }, mkIssue(), problems)).toBe(10);
+    expect(callSizeLambda(() => { throw new Error("boom"); }, mkIssue(), problems)).toBeNull();
     expect(problems[0]).toContain("boom");
-    expect(callSizeLambda(() => { throw "строка"; }, mkIssue(), problems)).toBe(10);
+    expect(callSizeLambda(() => { throw "строка"; }, mkIssue(), problems)).toBeNull();
     expect(problems[1]).toContain("упала");
   });
 
@@ -85,13 +86,13 @@ describe("callSizeLambda", () => {
     expect(problems[0]).toContain("«Размер»");
   });
 
-  it("дефолтная лямбда Size: известные значения, неизвестное и пустое → 10", () => {
+  it("дефолтная лямбда Size: известные значения → дни, неизвестное и пустое → null", () => {
     const fn = compileSizeLambda(DEFAULT_SIZE_LAMBDA).fn!;
     const mk = (cf: Record<string, string>, sizeRaw: string | null) => mkIssue({ _customFields: cf, sizeRaw });
     expect(fn(toLambdaIssue(mk({ Size: "L" }, "L")), [])).toBe(20);
     expect(fn(toLambdaIssue(mk({ Size: "xs" }, "xs")), [])).toBe(3); // регистр не важен
-    expect(fn(toLambdaIssue(mk({}, null)), [])).toBe(10);            // поле пустое
-    expect(fn(toLambdaIssue(mk({ Size: "" }, "Mega")), [])).toBe(10); // неизвестное значение
+    expect(fn(toLambdaIssue(mk({}, null)), [])).toBeNull();           // поле пустое
+    expect(fn(toLambdaIssue(mk({ Size: "" }, "Mega")), [])).toBeNull(); // неизвестное значение
   });
 
   it("история передаётся вторым аргументом", () => {

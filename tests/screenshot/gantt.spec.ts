@@ -240,11 +240,12 @@ test("диаграмма: сценарий INFRA — родитель от са�
     .map((t) => (t.match(/INFRA-\d/) || [""])[0]).filter(Boolean);
   expect(order).toEqual(["INFRA-1", "INFRA-2", "INFRA-3", "INFRA-4", "INFRA-5"]);
 
-  // план родительских обёрток: INFRA-1 07.09–18.09, INFRA-3 08.09–18.09
+  // план родителя: размер задан (M=10), поэтому бар = старт + 10 раб. дней:
+  // INFRA-1 07.09–18.09, INFRA-3 08.09–21.09 (детский максимум 18.09 меньше)
   const planOf = (id: string) =>
     page.locator("tr").filter({ hasText: id }).locator("[data-tid='gantt-svg'] title", { hasText: "план" });
   await expect(planOf("INFRA-1")).toContainText("07.09.2026 — 18.09.2026");
-  await expect(planOf("INFRA-3")).toContainText("08.09.2026 — 18.09.2026");
+  await expect(planOf("INFRA-3")).toContainText("08.09.2026 — 21.09.2026");
 
   // ГЕОМЕТРИЯ: сплошной бар (факт, нижняя дорожка y=19) должен начинаться
   // ровно на дате из ожидаемого дерева. Масштаб выводим из подписей оси:
@@ -350,11 +351,11 @@ test("диаграмма: факт работы — бар факта и дли�
   await expect(page).toHaveScreenshot("gantt-actual.png", { fullPage: true });
 });
 
-test("лямбда размера: тикет без Size — дефолт 10 дн. без предупреждений", async ({ page }) => {
+test("лямбда размера: тикет без Size — размер не задан (null) без предупреждений", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
   await expect(page.locator(".summary-row")).toContainText("Задач: 3");
-  // дефолтная лямбда размера молча заменяет неизвестное значение на 10 дней —
+  // дефолтная лямбда размера возвращает null (план не строится), это не ошибка —
   // предупреждений нет
   await expect(page.locator(".problems")).toHaveCount(0);
   // кастомная лямбда: размер = длина summary
@@ -376,7 +377,7 @@ test("сломанная лямбда: тост и предупреждение,
   await page.getByRole("button", { name: "Загрузить задачи" }).click();
   await page.locator(".problems a").click();
   await expect(page.locator(".problems")).toContainText("лямбда «Размер»");
-  await expect(page.locator(".problems")).toContainText("принят размер 10 дн.");
+  await expect(page.locator(".problems")).toContainText("размер не задан");
   // диаграмма построена — все задачи с дефолтным размером
   await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible();
 });

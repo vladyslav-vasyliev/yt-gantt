@@ -202,13 +202,16 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
     const color = COLORS[(it.depth || 0) % COLORS.length];
     const isResolved = !!it.resolved;
 
-    // бар оценки (план по Size): верхняя дорожка строки
+    // бар оценки (план): верхняя дорожка строки. У листа без размера плана нет
+    const hasPlan = !!(it.estStart && it.estEnd);
     const estStart = it.estStart ?? it.start!;
     const estEnd = it.estEnd ?? it.end!;
     const estIdx0 = Math.round((atMidnight(estStart).getTime() - min.getTime()) / 86400000);
     const estLen = Math.round((atMidnight(estEnd).getTime() - atMidnight(estStart).getTime()) / 86400000) + 1;
     const ex = estIdx0 * dayPx;
     const ew = Math.max(estLen * dayPx - 3, 6);
+    // подпись плана: число дней, если размер задан; у обёртки без размера — без числа
+    const planText = it.days != null ? `${it.days}д` : "";
 
     // бар факта (нижняя дорожка) + реальная длительность к.д./р.д.
     const fact = factSpan(it, now);
@@ -230,36 +233,40 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
         {todayX !== null && (
           <line x1={todayX} y1={y} x2={todayX} y2={ROW_H} stroke="#c8384a" strokeWidth={1.5} />
         )}
-        {/* оценка (план по Size) — верхняя дорожка, пунктир */}
-        <g>
-          <title>
-            {`Оценка «${it.sizeRaw || "?"}» — ${it.days} дн. (план): ${fmtDate(estStart)} — ${fmtDate(estEnd)}${isResolved ? "\nСостояние: Resolved ✓" : ""}`}
-          </title>
-          <rect x={ex} y={y + 5} width={ew} height={10} rx={3}
-                fill={color} opacity={0.25} stroke={color} strokeDasharray="4,3" />
-          {ew >= 18 && (
-            <text x={ex + ew / 2} y={y + 13} fontSize={9} fontWeight={600} textAnchor="middle" fill={color}>
-              {`${it.days}д${isResolved ? " ✓" : ""}`}
-            </text>
-          )}
-          {fact && (
-            <g>
-              {/* факт — нижняя дорожка: переход в статус начала → Resolved (или сегодня) */}
-              <title>
-                {`Факт: ${fmtDate(fact.start)} — ${fmtDate(fact.end)}${fact.open ? " (в работе)" : ""}\n` +
-                 `Реальная длительность: ${calD} к.д. / ${workD} р.д.`}
-              </title>
-              <rect x={fx} y={y + 19} width={fw} height={10} rx={3}
-                    fill={isResolved ? "#9aa5ba" : color}
-                    opacity={isResolved ? 0.45 : 0.85}
-                    stroke={isResolved ? color : "none"}
-                    strokeDasharray={isResolved ? "4,3" : "none"} />
-              <text x={fx + fw + 6} y={y + 27} fontSize={10} fill="#66738c">
-                {`${calD} к.д. / ${workD} р.д.`}
+        {/* оценка (план) — верхняя дорожка, пунктир; только если план определён */}
+        {hasPlan && (
+          <g>
+            <title>
+              {it.days != null
+                ? `Оценка «${it.sizeRaw || "?"}» — ${it.days} дн. (план): ${fmtDate(estStart)} — ${fmtDate(estEnd)}${isResolved ? "\nСостояние: Resolved ✓" : ""}`
+                : `План (по границам поддерева): ${fmtDate(estStart)} — ${fmtDate(estEnd)}${isResolved ? "\nСостояние: Resolved ✓" : ""}`}
+            </title>
+            <rect x={ex} y={y + 5} width={ew} height={10} rx={3}
+                  fill={color} opacity={0.25} stroke={color} strokeDasharray="4,3" />
+            {ew >= 18 && planText && (
+              <text x={ex + ew / 2} y={y + 13} fontSize={9} fontWeight={600} textAnchor="middle" fill={color}>
+                {`${planText}${isResolved ? " ✓" : ""}`}
               </text>
-            </g>
-          )}
-        </g>
+            )}
+          </g>
+        )}
+        {fact && (
+          <g>
+            {/* факт — нижняя дорожка: переход в статус начала → Resolved (или сегодня) */}
+            <title>
+              {`Факт: ${fmtDate(fact.start)} — ${fmtDate(fact.end)}${fact.open ? " (в работе)" : ""}\n` +
+               `Реальная длительность: ${calD} к.д. / ${workD} р.д.`}
+            </title>
+            <rect x={fx} y={y + 19} width={fw} height={10} rx={3}
+                  fill={isResolved ? "#9aa5ba" : color}
+                  opacity={isResolved ? 0.45 : 0.85}
+                  stroke={isResolved ? color : "none"}
+                  strokeDasharray={isResolved ? "4,3" : "none"} />
+            <text x={fx + fw + 6} y={y + 27} fontSize={10} fill="#66738c">
+              {`${calD} к.д. / ${workD} р.д.`}
+            </text>
+          </g>
+        )}
       </svg>
     );
   };

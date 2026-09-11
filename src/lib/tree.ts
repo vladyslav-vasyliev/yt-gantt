@@ -124,14 +124,17 @@ export interface Placed { start: Date; end: Date }
 
 // ---- модель расписания «родитель-обёртка» -----------------------------------
 //   факты приоритетнее плана: есть дата перехода в статус начала — бар от неё;
-//   задача Resolved — бар до resolvedAt (Size при этом — план для задач без факта);
+//   задача Resolved — бар до resolvedAt;
+//   плановая длительность: заданный размер (лямбда) либо, если размер не задан,
+//   границы поддерева у родителя; у листа без размера планового бара нет
+//   (для расписания такой лист занимает 1 день);
 //   корень без факта — от начала оси;
 //   первый ребёнок — одновременно с родителем;
 //   каждый следующий sibling — после конца предыдущего (каскад внутри поддерева);
 //   задача не взята в работу (нет факта старта и Resolved) — не раньше сегодня;
 //   родитель с детьми — обёртка: отсчёт — самый ранний факт старта среди себя
-//   и детей; завершение — не раньше самой поздней даты завершения детей любого
-//   уровня вложенности (и не раньше собственного факта конца);
+//   и детей; завершение (для расписания) — не раньше самой поздней даты
+//   завершения детей любого уровня и не раньше собственного факта конца;
 //   родитель без детей в выборке — обычная задача со своей длительностью.
 export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boolean): Issue[] {
   const resolved = new Map<string, Placed>();
@@ -194,12 +197,13 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
     const ownKids = kidsInChart.filter((k) => (parentOf.get(k.id) || "").toUpperCase() === key);
 
     let start: Date, end: Date, estStart: Date, estEnd: Date;
+    // рисуется ли плановый бар: у листа без размера (days === null) — нет
+    let hasPlan = true;
     if (ownKids.length) {
       // родитель-обёртка: отсчёт — самый ранний момент начала работ среди
       // самого родителя и его детей (факт родителя тоже участвует: INFRA-3
-      // мог перейти в Doing раньше, чем его дети); завершение — НЕ РАНЬШЕ
-      // самой поздней даты завершения детей: если у родителя есть собственный
-      // факт конца (Resolved), берём максимум из него и детей
+      // мог перейти в Doing раньше, чем его дети); завершение — не раньше самой
+      // поздней даты завершения детей любого уровня (или собственного факта конца)
       let prevEnd: Date | null = null;
       // самый поздний конец среди детей: у фактов последний по порядку ребёнок
       // может завершиться раньше предыдущего, поэтому plan-конец родителя =
@@ -228,7 +232,10 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       // закончиться раньше фактического завершения родительской задачи
       const ownEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
       if (ownEnd && ownEnd > end) end = new Date(ownEnd);
-      estStart = new Date(start); estEnd = new Date(end);
+      // плановая длительность родителя: заданный размер, иначе — границы
+      // поддерева (самый дальний потомок)
+      estStart = new Date(start);
+      estEnd = it.days != null ? barEnd(estStart, Math.max(it.days, 1)) : new Date(end);
       // сплошной бар родителя-обёртки — агрегат по себе и поддереву: он должен
       // начинаться/заканчиваться там же, где обёртка, а не по собственному факту
       const isFactual = !!it.actualStart || kidFactual;
@@ -240,9 +247,12 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       }
       factual.set(key, isFactual); closed.set(key, isClosed);
     } else {
-      // лист: факт (переход в статус начала / дата Resolved) перекрывает каскад
+      // лист: факт (переход в статус начала / дата Resolved) перекрывает каскад.
+      // Размер не задан (days === null) → планового бара нет, для расписания 1 день
       const fStart = it.actualStart || null;
       const fEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
+      const size = it.days != null ? Math.max(it.days, 1) : null;
+      hasPlan = size != null;
       factual.set(key, !!fStart);
       closed.set(key, !!fEnd);
       if (fStart) {
@@ -250,12 +260,12 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
         // чтобы шёл параллельно факту и показывал недо-/переоценку срока
         start = new Date(fStart);
         estStart = new Date(fStart);
-        estEnd = barEnd(estStart, Math.max(it.days ?? 1, 1));
+        estEnd = barEnd(estStart, size ?? 1);
         end = fEnd && fEnd >= fStart ? new Date(fEnd) : new Date(estEnd);
       } else if (fEnd) {
         // завершён, но истории начала нет: план Size уходит назад от resolvedAt
         end = new Date(fEnd);
-        start = barStartBefore(end, Math.max(it.days ?? 1, 1));
+        start = barStartBefore(end, size ?? 1);
         estStart = new Date(start); estEnd = new Date(end);
       } else {
         // не взята в работу: план не может начинаться раньше сегодняшнего дня
@@ -265,14 +275,20 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
           ? (skipWeekends ? nextWorkday(today) : new Date(today))
           : new Date(anchor);
         estStart = new Date(start);
-        end = barEnd(start, Math.max(it.days ?? 1, 1));
+        end = barEnd(start, size ?? 1);
         estEnd = new Date(end);
       }
     }
 
     stack.delete(key);
-    it.estStart = estStart;
-    it.estEnd = estEnd;
+    // плановый бар рисуем только когда план определён (есть размер или потомки)
+    if (hasPlan) {
+      it.estStart = estStart;
+      it.estEnd = estEnd;
+    } else {
+      it.estStart = undefined;
+      it.estEnd = undefined;
+    }
     const r = { start, end };
     resolved.set(key, r);
     return r;

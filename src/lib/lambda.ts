@@ -28,16 +28,16 @@ export interface LambdaIssue {
 // activity истории: { ts, field, added[], removed[] }
 export type LambdaActivity = HistoryEvent;
 
-export type SizeFn = (issue: LambdaIssue, activities: LambdaActivity[]) => number;
+export type SizeFn = (issue: LambdaIssue, activities: LambdaActivity[]) => number | null;
 export type StartFn = (issue: LambdaIssue, activities: LambdaActivity[]) => Date | null;
 
-// --- лямбда по умолчанию: Size → дни (XS…XXL, неизвестное значение → M) ------
+// --- лямбда по умолчанию: Size → дни; нет размера → null (план не строится) --
 export const SIZE_MAP: Record<string, number> = { "XS": 3, "S": 5, "M": 10, "L": 20, "XL": 40, "XXL": 80 };
 
 export const DEFAULT_SIZE_LAMBDA = `(issue, activities) => {
   const sizeMap = { "XS": 3, "S": 5, "M": 10, "L": 20, "XL": 40, "XXL": 80 };
-  const raw = (issue.customFields["Size"] || issue.sizeRaw || "M").toUpperCase();
-  return sizeMap[raw] != null ? sizeMap[raw] : sizeMap["M"];
+  const raw = (issue.customFields["Size"] || issue.sizeRaw || "").toUpperCase();
+  return sizeMap[raw] ?? null;
 }`;
 
 // --- лямбда по умолчанию: дата перехода в статус «Doing» ---------------------
@@ -91,20 +91,22 @@ export function toLambdaIssue(it: Issue): LambdaIssue {
   };
 }
 
-// безопасный вызов лямбды размера: ошибка → дефолт M (10 дней) + проблема
+// безопасный вызов лямбды размера: null — размер не задан (это допустимо);
+// ошибка/нечисло → null + проблема; иначе округлённое число дней
 export function callSizeLambda(
   fn: SizeFn, it: Issue, problems: string[], sizeFieldLabel = "Размер",
-): number {
+): number | null {
   const arg = toLambdaIssue(it);
   try {
     const days = fn(arg, it._history || []);
+    if (days == null) return null; // размер не указан — план не строится
     if (typeof days !== "number" || !Number.isFinite(days) || days < 0)
-      throw new Error(`вернула ${String(days)} вместо числа дней`);
+      throw new Error(`вернула ${String(days)} вместо числа дней или null`);
     return Math.round(days);
   } catch (e) {
-    const msg = `${it.id}: лямбда «${sizeFieldLabel}» ${e instanceof Error ? e.message : "упала"} — принят размер 10 дн.`;
+    const msg = `${it.id}: лямбда «${sizeFieldLabel}» ${e instanceof Error ? e.message : "упала"} — размер не задан`;
     problems.push(msg);
-    return 10;
+    return null;
   }
 }
 

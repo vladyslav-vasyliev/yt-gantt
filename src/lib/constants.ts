@@ -58,7 +58,8 @@ export interface Issue {
   // обогащение при обходе дерева / расписании
   depth?: number;
   _kids?: string[];
-  days?: number;
+  /** плановая длительность в днях; null — размер не задан (план не строится) */
+  days?: number | null;
   start?: Date;
   end?: Date;
   /** бар оценки (план по Size) — идёт параллельно факту и может с ним расходиться */
