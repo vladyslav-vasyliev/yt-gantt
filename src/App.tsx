@@ -4,7 +4,7 @@ import { Alert, AppBar, Stack, ThemeProvider, Toolbar, Typography, createTheme }
 import SettingsForm from "./components/SettingsForm";
 import GanttChart from "./components/GanttChart";
 import {
-  loadSettings, saveSettings, parseIds, applyProjectPrefix, fmtDate,
+  loadSettings, saveSettings, parseIds, applyProjectPrefix,
   MAX_ISSUES, type AppSettings, type Issue,
 } from "./lib/constants";
 import {
@@ -240,11 +240,9 @@ export default function App(): React.ReactElement {
 
       const rootCount = chartIssues.filter((i) => !i.depth).length;
       const maxDepth = chartIssues.reduce((m, i) => Math.max(m, i.depth || 0), 0);
-      const totalDays = chartIssues.reduce((s, i) => s + (i.days || 0), 0);
       const summary =
         `Задач: ${chartIssues.length} (корневых: ${rootCount}, дочерних: ${chartIssues.length - rootCount}` +
-        `${linkTypeName ? `, тип связи: «${linkTypeName}»` : ""}, глубина: ${maxDepth})` +
-        ` · суммарный размер: ${totalDays} дн. · окончание: ${fmtDate(chartIssues[chartIssues.length - 1].end!)}`;
+        `${linkTypeName ? `, тип связи: «${linkTypeName}»` : ""}, глубина: ${maxDepth})`;
 
       setChart({ issues: chartIssues, summary, problems, baseUrl: base, skipWeekends: settings.skipWeekends });
       if (problems.length) {
