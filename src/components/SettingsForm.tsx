@@ -3,9 +3,12 @@
 // вторично оборачивать его в setState нельзя — иначе ввод в поля не работает.
 //
 // Три таба:
-//   «Задачи» — первый и открыт по умолчанию
-//   «Настройки» — лямбды размера и начала работ
-//   «Описание» — описание логики работы сайта
+//   «Задачи» (первый, открыт по умолчанию) — идентификаторы и «Загрузить задачи»
+//     (график строится сразу после загрузки, отдельной кнопки «Построить» нет)
+//     плюс параметр расписания «пропускать выходные»;
+//   «Настройки» — подключение (URL, токен, проект) и конфигурация
+//     (тип связи дочерних + лямбды размера и начала работ);
+//   «Описание» — описание логики работы сайта.
 import React, { useState } from "react";
 import {
   Box, Button, Checkbox, CircularProgress, FormControlLabel,
@@ -21,10 +24,7 @@ const urlErr = (v: string): string =>
 interface Props {
   settings: AppSettings;
   setSettings: (patch: Partial<AppSettings>) => void;
-  linkTypeOptions: string[];
-  loaded: boolean;
   onLoad: () => void;
-  onBuild: () => void;
   busy: boolean;
   // лямбды расчёта: тексты и колбэки изменения (текст + сохранить в localStorage)
   sizeLambda: string;
@@ -36,7 +36,7 @@ interface Props {
 }
 
 export default function SettingsForm({
-  settings, setSettings, linkTypeOptions, loaded, onLoad, onBuild, busy,
+  settings, setSettings, onLoad, busy,
   sizeLambda, startLambda, onSizeLambdaChange, onStartLambdaChange,
   onSizeLambdaReset, onStartLambdaReset,
 }: Props): React.ReactElement {
@@ -74,7 +74,7 @@ export default function SettingsForm({
       <Tabs value={tab} onChange={(_, v: string) => setTab(v)}>
         {/* таб «Задачи» — первый и открыт по умолчанию */}
         <Tab value="issues" label="Задачи" />
-        {/* таб «Настройки» — лямбды размера и начала работ */}
+        {/* таб «Настройки» — подключение и конфигурация */}
         <Tab value="settings" label="Настройки" />
         {/* таб «Описание» — описание логики работы сайта */}
         <Tab value="info" label="Описание" />
@@ -95,35 +95,11 @@ export default function SettingsForm({
             </Button>
           </Stack>
 
-          {/* тип связи и параметры расписания + «Построить» */}
-          <fieldset className="group" disabled={!loaded}>
-            <div className="group-title">
-              Построение{loaded ? "" : " (сначала загрузите задачи)"}
-            </div>
-            <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
-              <Tooltip title="Имя связи, под которым дети видны на тикете (для стандартной иерархии — parent for); пусто — только указанные тикеты">
-                <TextField id="linkType" size="small" sx={{ width: 220 }}
-                  label="Тип связи дочерних"
-                  value={settings.linkType}
-                  onChange={(e) => f("linkType")(e.target.value)}
-                  placeholder={NO_LINK}
-                  slotProps={{
-                    input: { startAdornment: <InputAdornment position="start">↳</InputAdornment> },
-                  }} />
-              </Tooltip>
-              <FormControlLabel control={
-                <Checkbox size="small" checked={settings.skipWeekends}
-                  onChange={(e) => set({ skipWeekends: e.target.checked })} />
-              } label="пропускать выходные" />
-              <FormControlLabel control={
-                <Checkbox size="small" checked={settings.startToday}
-                  onChange={(e) => set({ startToday: e.target.checked })} />
-              } label="начинать сегодня (иначе — с понедельника текущей недели)" />
-              <Button variant="contained" onClick={onBuild} disabled={busy || !loaded}>
-                Построить
-              </Button>
-            </Stack>
-          </fieldset>
+          {/* параметр расписания: применяется при следующей загрузке */}
+          <FormControlLabel control={
+            <Checkbox size="small" checked={settings.skipWeekends}
+              onChange={(e) => set({ skipWeekends: e.target.checked })} />
+          } label="пропускать выходные" />
         </Stack>
       )}
 
@@ -145,6 +121,18 @@ export default function SettingsForm({
           </Stack>
 
           <Typography variant="h6">Конфигурация</Typography>
+          <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+            <Tooltip title="Имя связи, под которым дети видны на тикете (для стандартной иерархии — parent for); пусто — только указанные тикеты">
+              <TextField id="linkType" size="small" sx={{ width: 260 }}
+                label="Тип связи дочерних"
+                value={settings.linkType}
+                onChange={(e) => f("linkType")(e.target.value)}
+                placeholder={NO_LINK}
+                slotProps={{
+                  input: { startAdornment: <InputAdornment position="start">↳</InputAdornment> },
+                }} />
+            </Tooltip>
+          </Stack>
           <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
             <TextField
               id="sizeLambda" label="Размер (дни)" multiline minRows={6} maxRows={20} fullWidth
@@ -190,7 +178,6 @@ export default function SettingsForm({
         </Stack>
       )}
 
-
       {tab === "info" && (
         <Stack>
           <Typography variant="body1" sx={{ marginTop: 2 }}>
@@ -206,7 +193,8 @@ export default function SettingsForm({
           </Typography>
 
           <Typography variant="body1" sx={{ marginTop: 2 }}>
-            Настройки хранятся в localStorage. Запуск прокси для обхода CORS: <code>node server.cjs</code> → http://localhost:8414
+            График строится сразу после загрузки задач; настройки применяются при следующей загрузке.
+            Данные хранятся в localStorage. Запуск прокси для обхода CORS: <code>node server.cjs</code> → http://localhost:8414
           </Typography>
         </Stack>
       )}

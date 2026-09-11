@@ -71,7 +71,7 @@ describe("settings persistence", () => {
     const s: AppSettings = {
       baseUrl: "https://yt.x/", token: "perm:t", ids: "1,2", sizeField: "Size",
       stateField: "State", startStatus: "Doing", project: "infra",
-      linkType: "parent for", skipWeekends: false, startToday: true,
+      linkType: "parent for", skipWeekends: false,
     };
     saveSettings(s);
     const loaded = loadSettings();
@@ -79,7 +79,6 @@ describe("settings persistence", () => {
     expect(loaded.token).toBe("perm:t");
     expect(loaded.project).toBe("INFRA"); // нормализован в верхний регистр
     expect(loaded.skipWeekends).toBe(false);
-    expect(loaded.startToday).toBe(true);
     vi.unstubAllGlobals();
   });
 

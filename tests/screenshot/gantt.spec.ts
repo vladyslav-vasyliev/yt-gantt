@@ -157,11 +157,8 @@ async function build(page: Page): Promise<void> {
   // по умолчанию открыт таб «Задачи»
   await tab(page, "Задачи").click();
   await page.fill("#ids", "INFRA-1");
-  // шаг 1: загрузка тикетов, шаг 2: построение по выбранным полям
+  // «Загрузить задачи» сразу строит график — отдельной кнопки «Построить» нет
   await page.getByRole("button", { name: "Загрузить задачи" }).click();
-  const buildBtn = page.getByRole("button", { name: "Построить" });
-  await expect(buildBtn).toBeEnabled({ timeout: 15000 });
-  await buildBtn.click();
   await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible({ timeout: 15000 });
 }
 
@@ -173,7 +170,7 @@ test.beforeEach(async ({ context, page }) => {
   await page.clock.setFixedTime(new Date(NOW));
 });
 
-test("смена лямбды начала работ пересчитывает факт без повторной загрузки истории", async ({ page }) => {
+test("смена лямбды начала работ пересчитывает факт при повторной загрузке", async ({ page }) => {
   await mockYouTrack(page);
   await page.route("**/yt/api/issues/INFRA-1?*", (route) => route.fulfill(mkIssue({
     idReadable: "INFRA-1", summary: "Field selection", resolved: null, links: [],
@@ -183,9 +180,7 @@ test("смена лямбды начала работ пересчитывает
       { name: "Workflow", value: { name: "Doing" } },
     ],
   })));
-  let historyRequests = 0;
   await page.route("**/yt/api/issues/**/activities?*", async (route) => {
-    historyRequests++;
     const params = new URL(route.request().url()).searchParams;
     expect(params.get("categories")).toBe("CustomFieldCategory");
     expect(params.get("fields")).toContain("customField(name)");
@@ -196,15 +191,14 @@ test("смена лямбды начала работ пересчитывает
   });
   await build(page);
   const fact = page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /к\.д\./ });
-  // build уже поставил лямбду «первый переход State» — факт виден сразу
+  // дефолтная лямбда берёт самый ранний переход в Doing — 01.09 (Workflow)
   await expect(fact).toHaveText("4 к.д. / 4 р.д.");
-  // другая лямбда: берём поле Workflow (событие 09-01)
+  // другая лямбда: поле State (переход 04.09) + повторная загрузка перестраивает
   await tab(page, "Настройки").click();
-  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'Workflow')?.ts ?? null");
+  await page.fill("#startLambda", "(issue, activities) => activities.find(a => a.field === 'State')?.ts ?? null");
   await tab(page, "Задачи").click();
-  await page.getByRole("button", { name: "Построить" }).click();
-  await expect(fact).toHaveText("4 к.д. / 4 р.д.");
-  expect(historyRequests).toBe(1);
+  await page.getByRole("button", { name: "Загрузить задачи" }).click();
+  await expect(fact).toHaveText("1 к.д. / 1 р.д.");
 });
 
 test("форма: пустое состояние", async ({ page }) => {
@@ -220,9 +214,8 @@ test("валидация: пустые обязательные поля под�
   // URL и токен — на табе «Настройки»
   await tab(page, "Настройки").click();
   await page.fill("#baseUrl", "");
-  // поля и «Построить» неактивны до загрузки — валидация срабатывает на «Загрузить задачи»
+  // валидация срабатывает на «Загрузить задачи»
   await tab(page, "Задачи").click();
-  await expect(page.getByRole("button", { name: "Построить" })).toBeDisabled();
   await page.getByRole("button", { name: "Загрузить задачи" }).click();
   await expect(page.locator("text=Укажите URL YouTrack").first()).toBeVisible();
   await expect(page).toHaveScreenshot("form-validation.png", { fullPage: true });
@@ -368,7 +361,7 @@ test("лямбда размера: тикет без Size — дефолт 10 д
   await tab(page, "Настройки").click();
   await page.fill("#sizeLambda", "(issue, activities) => issue.summary.length > 3 ? 5 : 7");
   await tab(page, "Задачи").click();
-  await page.getByRole("button", { name: "Построить" }).click();
+  await page.getByRole("button", { name: "Загрузить задачи" }).click();
   await expect(page.locator(".summary-row")).toContainText("Задач: 3");
   await page.locator("[data-tid='gantt-svg'] text").filter({ hasText: /^5д$/ }).first().isVisible();
   await expect(page).toHaveScreenshot("gantt-size-fallback.png", { fullPage: true });
@@ -380,7 +373,7 @@ test("сломанная лямбда: тост и предупреждение,
   await tab(page, "Настройки").click();
   await page.fill("#sizeLambda", "(issue, activities) => { throw new Error('boom'); }");
   await tab(page, "Задачи").click();
-  await page.getByRole("button", { name: "Построить" }).click();
+  await page.getByRole("button", { name: "Загрузить задачи" }).click();
   await page.locator(".problems a").click();
   await expect(page.locator(".problems")).toContainText("лямбда «Размер»");
   await expect(page.locator(".problems")).toContainText("принят размер 10 дн.");

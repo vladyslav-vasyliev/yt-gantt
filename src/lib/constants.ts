@@ -88,7 +88,6 @@ export interface AppSettings {
   project: string;
   linkType: string;
   skipWeekends: boolean;
-  startToday: boolean;
 }
 
 export const norm = (s: string | null | undefined): string => (s || "").trim().toLowerCase();
@@ -210,7 +209,6 @@ export function loadSettings(): AppSettings {
     project: get("yt_project", ""),
     linkType: get("yt_linktype", "parent for"),
     skipWeekends: get("yt_skipweekends", "1") === "1",
-    startToday: get("yt_starttoday", "1") === "1",
   };
 }
 
@@ -225,7 +223,6 @@ export function saveSettings(s: AppSettings): void {
     localStorage.setItem("yt_project", s.project.trim().toUpperCase());
     localStorage.setItem("yt_linktype", s.linkType);
     localStorage.setItem("yt_skipweekends", s.skipWeekends ? "1" : "0");
-    localStorage.setItem("yt_starttoday", s.startToday ? "1" : "0");
   } catch { /* приватный режим — не критично */ }
 }
 

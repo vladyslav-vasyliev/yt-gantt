@@ -26,7 +26,6 @@ async function build(page: Page): Promise<void> {
   await page.getByRole("tab", { name: "Задачи" }).click();
   await page.fill("#ids", "1");
   await page.getByRole("button", { name: "Загрузить задачи" }).click();
-  await page.getByRole("button", { name: "Построить" }).click();
   await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible({ timeout: 15000 });
 }
 

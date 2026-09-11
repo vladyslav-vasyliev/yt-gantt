@@ -14,7 +14,7 @@ import {
   loadSizeLambda, loadStartLambda, saveSizeLambda, saveStartLambda,
   resetSizeLambda, resetStartLambda,
 } from "./lib/lambda";
-import { cache, fetchBatch, collectLinkTypes, idsWithoutHistory, PROXY } from "./lib/youtrack";
+import { cache, fetchBatch, idsWithoutHistory, PROXY } from "./lib/youtrack";
 import { buildTreeAsync, dfsOrder, schedule, type TreeContext } from "./lib/tree";
 
 // тема: наследуем системный шрифт проекта, остальное — дефолты MUI
@@ -73,8 +73,6 @@ const validateForm = (s: AppSettings): string[] => {
 export default function App(): React.ReactElement {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [busy, setBusy] = useState(false);
-  const [loaded, setLoaded] = useState(false); // тикеты в кеше → поля и «Построить» доступны
-  const [loadProblems, setLoadProblems] = useState<string[]>([]);
   const [chart, setChart] = useState<ChartData | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -170,18 +168,17 @@ export default function App(): React.ReactElement {
         toast.push("Ни одна задача не загружена. " + problems.slice(0, 3).join(" · "), { use: "error" });
         return;
       }
-      setLoaded(true);
-      setLoadProblems(problems);
       setChart(null); // прежний график построен по предыдущим данным
       // тихий отказ истории (403/сеть) внешне не заметен — сообщаем сразу
       const noHist = idsWithoutHistory([...cache.values()]);
       if (noHist.length) {
         problems.push(`История изменений недоступна для: ${noHist.slice(0, 5).join(", ")}${noHist.length > 5 ? ` … (+${noHist.length - 5})` : ""} — дата статуса начала не определится`);
-        setLoadProblems(problems);
         toast.push(`Загружено задач: ${cache.size}, но у ${noHist.length} нет истории изменений (проверьте права токена на activities/history)`, { use: "warning" });
       } else {
         toast.push(`Загружено задач: ${cache.size}` + (problems.length ? ` · с ошибками: ${problems.length}` : ""));
       }
+      // отдельной кнопки «Построить» нет — строим график сразу после загрузки
+      await buildChart(problems);
     } catch (e) {
       toast.push(e instanceof Error ? e.message : "Ошибка", { use: "error" });
     } finally {
@@ -189,21 +186,15 @@ export default function App(): React.ReactElement {
     }
   };
 
-  // Шаг 2 — «Построить»: дерево по выбранной связи (дети докачиваются),
-  // факт и размер считаются пользовательскими лямбдами (таб «Расчёт»).
-  const build = async (): Promise<void> => {
-    if (!cache.size) {
-      toast.push("Сначала загрузите задачи кнопкой «Загрузить задачи»", { use: "error" });
-      return;
-    }
-
+  // построение дерева и расписания по уже загруженному кешу (вызывается из load)
+  const buildChart = async (baseProblems: string[]): Promise<void> => {
     const base = settings.baseUrl.trim().replace(/\/+$/, "");
     const token = settings.token.trim();
     const sizeField = settings.sizeField.trim() || "Size";
     const linkTypeName = settings.linkType.trim();
     const roots = parseIds(applyProjectPrefix(settings.ids, settings.project.trim().toUpperCase()));
 
-    // лямбды компилируются на каждый клик: пользователь мог изменить текст
+    // лямбды компилируются на каждый запуск: пользователь мог изменить текст
     const sizeRes = compileSizeLambda(sizeLambda);
     const startRes = compileStartLambda(startLambda);
     if (sizeRes.error) toast.push(sizeRes.error + " — используется лямбда по умолчанию", { use: "warning" });
@@ -211,9 +202,8 @@ export default function App(): React.ReactElement {
     const sizeFn = sizeRes.fn ?? compileSizeLambda(DEFAULT_SIZE_LAMBDA).fn!;
     const startFn = startRes.fn ?? compileStartLambda(DEFAULT_START_LAMBDA).fn!;
 
-    setBusy(true);
     setShowProblems(false);
-    const problems: string[] = [...loadProblems];
+    const problems: string[] = [...baseProblems];
 
     try {
       const loadCtx = { base, token, sizeField, onNetworkError: networkToaster(toast) };
@@ -245,7 +235,8 @@ export default function App(): React.ReactElement {
         return;
       }
 
-      schedule(chartIssues, settings.skipWeekends, settings.startToday);
+      // план всегда отсчитываем от сегодняшнего дня
+      schedule(chartIssues, settings.skipWeekends, true);
 
       const rootCount = chartIssues.filter((i) => !i.depth).length;
       const maxDepth = chartIssues.reduce((m, i) => Math.max(m, i.depth || 0), 0);
@@ -264,13 +255,8 @@ export default function App(): React.ReactElement {
     } catch (e) {
       const message = (e instanceof Error ? e.message : "Ошибка");
       toast.push(message + (problems.length ? " · " + problems.slice(0, 3).join(" · ") : ""), { use: "error" });
-    } finally {
-      setBusy(false);
     }
   };
-
-  // типы связей для поля «Тип связи дочерних» — из загруженных тикетов
-  const linkTypeOptions = useMemo(() => (cache.size ? collectLinkTypes() : []), [loaded, chart]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -288,10 +274,7 @@ export default function App(): React.ReactElement {
         <SettingsForm
           settings={settings}
           setSettings={set}
-          linkTypeOptions={linkTypeOptions}
-          loaded={loaded}
           onLoad={load}
-          onBuild={build}
           busy={busy}
           sizeLambda={sizeLambda}
           startLambda={startLambda}
@@ -328,8 +311,8 @@ export default function App(): React.ReactElement {
           <section className="panel empty">
             <div className="empty-title">График ещё не построен</div>
             <div className="empty-text">
-              Укажите адрес YouTrack и токен, загрузите задачи из списка,
-              выберите поля и нажмите «Построить».
+              Укажите адрес YouTrack и токен, задайте идентификаторы задач
+              и нажмите «Загрузить задачи» — график построится сразу.
             </div>
           </section>
         )}
