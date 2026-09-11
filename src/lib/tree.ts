@@ -236,14 +236,20 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       // поддерева (самый дальний потомок)
       estStart = new Date(start);
       estEnd = it.days != null ? barEnd(estStart, Math.max(it.days, 1)) : new Date(end);
-      // сплошной бар родителя-обёртки — агрегат по себе и поддереву: он должен
-      // начинаться/заканчиваться там же, где обёртка, а не по собственному факту
+      // сплошной факт-бар родителя: начинается с самого раннего фактического
+      // старта в поддереве и заканчивается фактическим завершением самой задачи
+      // (или today, если она ещё не завершена). Если дети по плану/факту идут
+      // дальше — от конца сплошного бара рисуется слабо окрашенный пунктир
       const isFactual = !!it.actualStart || kidFactual;
       const isClosed = !!ownEnd || allKidsClosed;
       if (isFactual) {
         it.actualStart = new Date(start);
-        // незакрытое поддерево оставляем «в работе» — factSpan доведёт до сегодня
-        if (isClosed) it.actualEnd = new Date(end);
+        it.actualEnd = ownEnd ? new Date(ownEnd) : (isClosed ? new Date(end) : null);
+        // хвост-продолжение: до самого позднего завершения среди детей
+        const factEnd = it.actualEnd ?? today;
+        it.actualTailEnd = end > factEnd ? new Date(end) : undefined;
+      } else {
+        it.actualTailEnd = undefined;
       }
       factual.set(key, isFactual); closed.set(key, isClosed);
     } else {
@@ -255,6 +261,7 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       hasPlan = size != null;
       factual.set(key, !!fStart);
       closed.set(key, !!fEnd);
+      it.actualTailEnd = undefined; // у листа продолжения факт-бара нет
       if (fStart) {
         // бар оценки — всегда от фактического старта + Size рабочих дней,
         // чтобы шёл параллельно факту и показывал недо-/переоценку срока

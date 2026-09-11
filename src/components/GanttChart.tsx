@@ -1,6 +1,6 @@
 // Диаграмма Ганта на MUI Table + SVG-бары.
 // Чистая отрисовка: данные приходят готовыми. Колонка задач — sticky слева,
-// ось с барами скроллится горизонтально. Масштаб: авто — 8 недель на экр��н
+// ось с барами скроллится горизонтально. Масштаб: авто — 13 недель на экр��н
 // (по ширине контейнера), кнопками «−»/«+» — вручную.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Stack, Table, TableBody, TableCell, TableRow, Tooltip } from "@mui/material";
@@ -63,7 +63,7 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   // ширина области графика (замеряется по контейнеру); 0 — до первого замера
   const [viewport, setViewport] = useState(0);
-  // px за день; null = авто-масштаб (8 недель на экран)
+  // px за день; null = авто-масштаб (13 недель на экран)
   const [zoom, setZoom] = useState<number | null>(null);
   // ширина колонки задач: тянется за край шапки, размер — в localStorage
   const [labelW, setLabelW] = useState<number>(loadLabelW);
@@ -222,6 +222,14 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
     const fx = fIdx0 * dayPx;
     const fw = Math.max((fIdx1 - fIdx0) * dayPx + dayPx - 3, 6);
 
+    // слабо окрашенное пунктирное продолжение факт-бара: дети идут дальше
+    const tailEnd = it.actualTailEnd;
+    const hasTail = !!(tailEnd && fact && tailEnd.getTime() > fact.end.getTime());
+    const tIdx0 = hasTail && fact ? Math.round((atMidnight(fact.end).getTime() - min.getTime()) / 86400000) : 0;
+    const tIdx1 = hasTail && tailEnd ? Math.round((atMidnight(tailEnd).getTime() - min.getTime()) / 86400000) : 0;
+    const tx = tIdx0 * dayPx;
+    const tw = Math.max((tIdx1 - tIdx0) * dayPx + dayPx - 3, 6);
+
     return (
       <svg width={chartW} height={ROW_H} viewBox={`0 0 ${chartW} ${ROW_H}`} data-tid="gantt-svg">
         {weekendXs.map((x, i) => (
@@ -267,6 +275,15 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
             </text>
           </g>
         )}
+        {hasTail && (
+          <g>
+            {/* слабо окрашенное пунктирное продолжение: дети завершаются позже.
+                Толстая пунктирная линия (не rect), чтобы не путать с факт-баром */}
+            <title>{`Дети завершаются позже: до ${fmtDate(tailEnd!)}`}</title>
+            <line x1={tx} y1={y + 24} x2={tx + tw} y2={y + 24}
+                  stroke={color} strokeWidth={10} strokeDasharray="2,3" opacity={0.18} />
+          </g>
+        )}
       </svg>
     );
   };
@@ -278,7 +295,7 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
       {/* липкая шапка диаграммы: кнопки масштаба и легенда шкалы дат держатся
           под шапкой страницы при вертикальном скроле */}
       <Box className="gantt-sticky">
-        {/* масштаб: авто — 8 недель на экран, «−»/«+» — ручной (шаг ×1.25) */}
+        {/* масштаб: авто — 13 недель на экран, «−»/«+» — ручной (шаг ×1.25) */}
         <Stack direction="row" spacing={1} className="zoombar" sx={{ alignItems: "center" }}>
           <Button size="small" variant="outlined" aria-label="Уменьшить масштаб"
                   disabled={dayPx <= DAY_PX_MIN}
@@ -287,7 +304,7 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
                   disabled={dayPx >= DAY_PX_MAX}
                   onClick={() => setZoom(clampDayPx(dayPx * ZOOM_STEP))}>+</Button>
           <Button size="small" variant="outlined" disabled={zoom === null}
-                  onClick={() => setZoom(null)}>8 недель</Button>
+                  onClick={() => setZoom(null)}>13 недель</Button>
           {weeksVisible && <span className="zoom-label">≈ {weeksVisible} нед. на экране</span>}
         </Stack>
         {/* шкала дат: уголок колонки задач + окно шкалы, синхронное скроллу тела */}

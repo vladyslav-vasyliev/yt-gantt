@@ -318,22 +318,22 @@ test("масштаб: список задач слева остаётся на �
   await expect(page).toHaveScreenshot("gantt-sticky.png", { fullPage: true });
 });
 
-test("масштаб: кнопки «−»/«+» меняют ширину дня, «8 недель» возвращает авто", async ({ page }) => {
+test("масштаб: кнопки «−»/«+» меняют ширину дня, «13 недель» возвращает авто", async ({ page }) => {
   await mockYouTrack(page);
   await build(page);
   const svg = page.locator("[data-tid='gantt-svg']").first();
   const auto = Number(await svg.getAttribute("width"));
   const zoomLabel = page.locator(".zoom-label");
-  // авто-масштаб: 8 недель на экране
-  await expect(zoomLabel).toContainText("8 нед");
-  // «+» — день шире, «−» — уже; «8 недель» возвращает авто
+  // авто-масштаб: 13 недель на экране
+  await expect(zoomLabel).toContainText("13 нед");
+  // «+» — день шире, «−» — уже; «13 недель» возвращает авто
   await page.getByRole("button", { name: "Увеличить масштаб" }).click();
   const wider = Number(await svg.getAttribute("width"));
   expect(wider).toBeGreaterThan(auto);
-  await expect(zoomLabel).toContainText("6 нед");
+  await expect(zoomLabel).toContainText("10 нед");
   await page.getByRole("button", { name: "Уменьшить масштаб" }).click();
   expect(Number(await svg.getAttribute("width"))).toBeCloseTo(auto, 0);
-  await page.getByRole("button", { name: "8 недель" }).click();
+  await page.getByRole("button", { name: "13 недель" }).click();
   expect(Number(await svg.getAttribute("width"))).toBe(auto);
   // повторное увеличение — для скриншота увеличенного вида
   await page.getByRole("button", { name: "Увеличить масштаб" }).click();

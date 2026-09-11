@@ -164,10 +164,10 @@ describe("withCurrent — элементы селекта с чистым value"
 });
 
 describe("масштаб диаграммы: fitWeeks / clampDayPx", () => {
-  it("по умолчанию 8 недель умещаются в доступную ширину", () => {
-    // 892px области графика → 892/56 ≈ 15.93 px за день
-    expect(fitWeeks(892)).toBeCloseTo(15.93, 2);
-    expect(fitWeeks(560)).toBe(10); // ровно 8 недель
+  it("по умолчанию 13 недель умещаются в доступную ширину", () => {
+    // 892px области графика → 892/91 ≈ 9.80 px за день
+    expect(fitWeeks(892)).toBeCloseTo(9.8, 2);
+    expect(fitWeeks(560)).toBeCloseTo(6.15, 2); // 560/91 ≈ 6.15
     expect(fitWeeks(280, 5)).toBe(8); // кастомное число недель
   });
 

@@ -8,8 +8,8 @@ export const FETCH_CONCURRENCY = 5; // параллельных запросов
 export const DAY_PX = 26, ROW_H = 34, TOP = 46;
 
 // --- масштаб диаграммы ---------------------------------------------------------
-// по умолчанию на экран помещается 8 недель; дальше — кнопками «−»/«+»
-export const WEEKS_ON_SCREEN = 8;
+// по умолчанию на экран помещается 13 недель; дальше — кнопками «−»/«+»
+export const WEEKS_ON_SCREEN = 13;
 export const DAY_PX_MIN = 3, DAY_PX_MAX = 60;
 export const ZOOM_STEP = 1.25;
 
@@ -67,6 +67,8 @@ export interface Issue {
   estEnd?: Date;
   actualStart?: Date | null;
   actualEnd?: Date | null;
+  /** конец слабо окрашенного пунктирного продолжения факт-бара (дети позже) */
+  actualTailEnd?: Date;
 }
 
 export interface LoadContext {

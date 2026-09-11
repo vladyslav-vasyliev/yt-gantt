@@ -290,12 +290,28 @@ describe("schedule — модель «родитель-обёртка»", () => 
         "INFRA-4": { s: "2026-09-09", e: "2026-09-10" },
         "INFRA-5": { s: "2026-09-14", e: "2026-09-18" },
       });
-      // сплошной бар (факт) родителя-обёртки — агрегат по поддереву, а не
-      // собственный Doing родителя (иначе INFRA-1 рисовался бы с 08.09)
+      // сплошной бар (факт) родителя: старт — самый ранний в поддереве (07.09),
+      // конец — собственное фактическое завершение задачи; продолжение — хвост
       expect(f(I1.actualStart!)).toBe("2026-09-07");
-      expect(f(I1.actualEnd!)).toBe("2026-09-18");
+      expect(f(I1.actualEnd!)).toBe("2026-09-11");       // собственный Resolved
+      expect(f(I1.actualTailEnd!)).toBe("2026-09-18");   // дети идут дальше
       expect(f(I3.actualStart!)).toBe("2026-09-08");
-      expect(f(I3.actualEnd!)).toBe("2026-09-18");
+      expect(f(I3.actualEnd!)).toBe("2026-09-15");       // собственный Resolved
+      expect(f(I3.actualTailEnd!)).toBe("2026-09-18");   // дети идут дальше
+    });
+
+    it("факт-бар родителя: хвост до планового конца незавершённого ребёнка", () => {
+      const P = mkIssue("P", 2);
+      const K = mkIssue("K", 10);
+      P._kids = ["K"];
+      P.actualStart = new Date(2026, 8, 1);
+      P.resolved = true;
+      P.resolvedAt = new Date(2026, 8, 3);
+      P.actualEnd = P.resolvedAt;
+      K.actualStart = new Date(2026, 8, 2); // ребёнок открыт → его конец плановый
+      schedule([P, K], true, true);
+      expect(f(P.actualEnd!)).toBe("2026-09-03");        // сплошной — до своего Resolved
+      expect(f(P.actualTailEnd!)).toBe(f(K.end!));       // пунктир — до конца ребёнка
     });
 
     it("правило «не раньше позднего ребёнка» сквозное: работает на всех уровнях", () => {
