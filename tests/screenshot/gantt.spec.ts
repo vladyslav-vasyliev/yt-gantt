@@ -118,9 +118,37 @@ async function mockInfraTree(page: Page): Promise<void> {
   }
 }
 
+// длинное дерево (родитель + 12 детей) — чтобы страница прокручивалась
+async function mockLongTree(page: Page): Promise<void> {
+  const kids = Array.from({ length: 12 }, (_, i) => `INFRA-${i + 2}`);
+  await page.route("**/yt/api/issues/INFRA-1?*", (route) => route.fulfill(mkIssue({
+    idReadable: "INFRA-1",
+    summary: "Родительская задача",
+    resolved: null,
+    customFields: [
+      { name: "Size", value: { name: "L" } },
+      { name: "State", value: { name: "Doing" } },
+    ],
+    links: [{
+      direction: "OUTBOUND",
+      linkType: { name: "Subtask", sourceToTarget: "parent for", targetToSource: "subtask of" },
+      issues: kids.map((k) => ({ idReadable: k })),
+    }],
+  })));
+  await page.route("**/yt/api/issues/INFRA-1/activities?*", (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }));
+  for (const k of kids) {
+    await page.route(`**/yt/api/issues/${k}?*`, (route) => route.fulfill(mkIssue({
+      idReadable: k, summary: `Дочерняя ${k}`, resolved: null,
+      customFields: [{ name: "Size", value: { name: "S" } }], links: [],
+    })));
+    await page.route(`**/yt/api/issues/${k}/activities?*`, (route) =>
+      route.fulfill({ contentType: "application/json", body: "[]" }));
+  }
+}
+
 // MUI Tab имеет role="tab"
 const tab = (page: Page, name: string) => page.getByRole("tab", { name });
-
 async function build(page: Page): Promise<void> {
   await page.goto("/");
   // токен — на табе «Настройки»
@@ -358,4 +386,24 @@ test("сломанная лямбда: тост и предупреждение,
   await expect(page.locator(".problems")).toContainText("принят размер 10 дн.");
   // диаграмма построена — все задачи с дефолтным размером
   await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible();
+});
+
+test("при скроле заголовок и панель масштаба прилипают к верху", async ({ page }) => {
+  await mockLongTree(page);
+  await build(page);
+  // узкий экран, чтобы страница прокручивалась
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(200);
+
+  const appbar = page.locator("header.MuiAppBar-root");
+  const zoombar = page.locator(".zoombar");
+  const appbarBox = await appbar.boundingBox();
+  const zoombarBox = await zoombar.boundingBox();
+  // заголовок прилип к верху, панель масштаба — ровно под ним
+  expect(appbarBox!.y).toBeCloseTo(0, 0);
+  expect(zoombarBox!.y).toBeCloseTo(appbarBox!.height, 0);
+  await expect(appbar).toContainText("Диаграмма Ганта");
+  await expect(zoombar.getByRole("button", { name: "Увеличить масштаб" })).toBeInViewport();
+  await expect(page).toHaveScreenshot("gantt-sticky-header.png");
 });

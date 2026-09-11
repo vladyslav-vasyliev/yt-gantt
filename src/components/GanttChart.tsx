@@ -258,8 +258,9 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
 
   return (
     <Box ref={wrapRef}>
-      {/* масштаб: авто — 8 недель на экран, «−»/«+» — ручной (шаг ×1.25) */}
-      <Stack direction="row" spacing={1} className="zoombar" sx={{ mb: 1, alignItems: "center" }}>
+      {/* масштаб: авто — 8 недель на экран, «−»/«+» — ручной (шаг ×1.25);
+          липнет под шапкой, чтобы кнопки не уезжали при скроле */}
+      <Stack direction="row" spacing={1} className="zoombar" sx={{ alignItems: "center" }}>
         <Button size="small" variant="outlined" aria-label="Уменьшить масштаб"
                 disabled={dayPx <= DAY_PX_MIN}
                 onClick={() => setZoom(clampDayPx(dayPx / ZOOM_STEP))}>−</Button>

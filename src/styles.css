@@ -43,8 +43,9 @@ fieldset.group { margin: 0; min-width: 0; border: 0; padding: 0; }
 .problems ul { color: var(--warn); font-size: 12px; }
 .problems-toggle { color: var(--accent); font-size: 14px; cursor: pointer; user-select: none; }
 
-/* панель масштаба диаграммы */
-.zoombar { margin-bottom: 8px; }
+/* панель масштаба диаграммы: липнет под липкой шапкой (её высота — --appbar-h) */
+.zoombar { position: sticky; top: var(--appbar-h, 56px); z-index: 3;
+           background: var(--surface); padding: 8px 0; margin-bottom: 0; }
 .zoom-label { color: var(--muted); font-size: 12px; }
 
 /* MUI Table: sticky-колонка задач, нулевые отступы ячеек с SVG */

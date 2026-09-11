@@ -79,6 +79,8 @@ export default function App(): React.ReactElement {
   const [showProblems, setShowProblems] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextToastId = useRef(0);
+  // липкая шапка: её высота нужна панели масштаба, чтобы прилипать точно под ней
+  const appbarRef = useRef<HTMLElement | null>(null);
   // лямбды расчёта (таб «Расчёт»): тексты редактируются в форме,
   // компилируются при построении; размер в localStorage
   const [sizeLambda, setSizeLambda] = useState<string>(loadSizeLambda);
@@ -96,6 +98,19 @@ export default function App(): React.ReactElement {
     setSizeLambda(resetSizeLambda()), []);
   const resetStartLambdaText = useCallback((): void =>
     setStartLambda(resetStartLambda()), []);
+
+  // высота липкой шапки → CSS-переменная; панель масштаба прилипает под ней
+  useEffect(() => {
+    const el = appbarRef.current;
+    if (!el) return;
+    const apply = (): void =>
+      document.documentElement.style.setProperty("--appbar-h", `${el.offsetHeight}px`);
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const closeToast = useCallback((id: number): void =>
     setToasts((prev) => prev.filter((t) => t.id !== id)), []);
@@ -261,11 +276,11 @@ export default function App(): React.ReactElement {
     <ThemeProvider theme={theme}>
       <ToastStack items={toasts} onClose={closeToast} />
 
-      {/* шапка: продуктовое название, навигации нет — бургер не нужен */}
-      <AppBar position="static">
-        <Toolbar sx={{ justifyContent: 'center' }}>
-          <Typography variant="h5" component="div" sx={{ margin: 2 }}>Диаграмма Ганта</Typography>
-
+      {/* шапка: продуктовое название, навигации нет — бургер не нужен;
+          липкая — заголовок остаётся видимым при скроле длинной диаграммы */}
+      <AppBar ref={appbarRef} position="sticky" sx={{ top: 0 }}>
+        <Toolbar sx={{ justifyContent: "center", minHeight: 56 }}>
+          <Typography variant="h6" component="div">Диаграмма Ганта</Typography>
         </Toolbar>
       </AppBar>
 
