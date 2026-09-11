@@ -3,7 +3,7 @@
 // ось с барами скроллится горизонтально. Масштаб: авто — 8 недель на экр��н
 // (по ширине контейнера), кнопками «−»/«+» — вручную.
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip } from "@mui/material";
+import { Box, Button, Stack, Table, TableBody, TableCell, TableRow, Tooltip } from "@mui/material";
 import {
   COLORS, DAY_PX, DAY_PX_MAX, DAY_PX_MIN, ROW_H, TOP, ZOOM_STEP,
   LABEL_W_DEFAULT, LABEL_W_MAX, LABEL_W_MIN,
@@ -68,6 +68,16 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
   // ширина колонки задач: тянется за край шапки, размер — в localStorage
   const [labelW, setLabelW] = useState<number>(loadLabelW);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // тело диаграммы (горизонтальный скролл) и окно шкалы дат в липкой шапке
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const axisRef = useRef<HTMLDivElement | null>(null);
+  // шкала дат закреплена над телом, но должна ехать в такт его горизонтальному скроллу
+  const syncAxis = (): void => {
+    if (axisRef.current && scrollRef.current)
+      axisRef.current.scrollLeft = scrollRef.current.scrollLeft;
+  };
+  // после перерисовок (зум/сворачивание/ресайз колонки) выравниваем шкалу заново
+  useEffect(syncAxis);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -258,50 +268,52 @@ export default function GanttChart({ issues, skipWeekends, baseUrl }: Props): Re
 
   return (
     <Box ref={wrapRef}>
-      {/* масштаб: авто — 8 недель на экран, «−»/«+» — ручной (шаг ×1.25);
-          липнет под шапкой, чтобы кнопки не уезжали при скроле */}
-      <Stack direction="row" spacing={1} className="zoombar" sx={{ alignItems: "center" }}>
-        <Button size="small" variant="outlined" aria-label="Уменьшить масштаб"
-                disabled={dayPx <= DAY_PX_MIN}
-                onClick={() => setZoom(clampDayPx(dayPx / ZOOM_STEP))}>−</Button>
-        <Button size="small" variant="outlined" aria-label="Увеличить масштаб"
-                disabled={dayPx >= DAY_PX_MAX}
-                onClick={() => setZoom(clampDayPx(dayPx * ZOOM_STEP))}>+</Button>
-        <Button size="small" variant="outlined" disabled={zoom === null}
-                onClick={() => setZoom(null)}>8 недель</Button>
-        {weeksVisible && <span className="zoom-label">≈ {weeksVisible} нед. на экране</span>}
-      </Stack>
-      <Box sx={{ overflowX: "auto" }}>
+      {/* липкая шапка диаграммы: кнопки масштаба и легенда шкалы дат держатся
+          под шапкой страницы при вертикальном скроле */}
+      <Box className="gantt-sticky">
+        {/* масштаб: авто — 8 недель на экран, «−»/«+» — ручной (шаг ×1.25) */}
+        <Stack direction="row" spacing={1} className="zoombar" sx={{ alignItems: "center" }}>
+          <Button size="small" variant="outlined" aria-label="Уменьшить масштаб"
+                  disabled={dayPx <= DAY_PX_MIN}
+                  onClick={() => setZoom(clampDayPx(dayPx / ZOOM_STEP))}>−</Button>
+          <Button size="small" variant="outlined" aria-label="Увеличить масштаб"
+                  disabled={dayPx >= DAY_PX_MAX}
+                  onClick={() => setZoom(clampDayPx(dayPx * ZOOM_STEP))}>+</Button>
+          <Button size="small" variant="outlined" disabled={zoom === null}
+                  onClick={() => setZoom(null)}>8 недель</Button>
+          {weeksVisible && <span className="zoom-label">≈ {weeksVisible} нед. на экране</span>}
+        </Stack>
+        {/* шкала дат: уголок колонки задач + окно шкалы, синхронное скроллу тела */}
+        <Box className="gantt-axis-bar">
+          <Box className="gantt-axis-corner" sx={{ width: labelW }}>
+            <span className="gantt-col-title">Задача</span>
+            {/* правый край — ручка изменения ширины колонки задач */}
+            <span className="gantt-resizer" onMouseDown={startResize}
+                  role="separator" aria-orientation="vertical"
+                  aria-label="Изменить ширину колонки задач" title="Потяните, чтобы изменить ширину колонки" />
+          </Box>
+          <Box className="gantt-axis-viewport" ref={axisRef}>
+            <svg width={chartW} height={TOP} data-tid="gantt-axis">
+              {weekendXs.map((x, i) => (
+                <rect key={"we" + i} x={x} y={TOP - 20} width={dayPx} height={20} fill="#1c2433" opacity={0.05} />
+              ))}
+              {gridLabels}
+              {gridLineXs.map((x, i) => (
+                <line key={"ln" + i} x1={x} y1={24} x2={x} y2={TOP} stroke="#d9e0ea" strokeDasharray="3,3" />
+              ))}
+              {todayX !== null && (
+                <g>
+                  <line x1={todayX} y1={TOP - 20} x2={todayX} y2={TOP} stroke="#c8384a" strokeWidth={1.5} />
+                  <text x={todayX + 4} y={TOP - 26} fill="#c8384a">сегодня</text>
+                </g>
+              )}
+            </svg>
+          </Box>
+        </Box>
+      </Box>
+      <Box className="gantt-scroll" ref={scrollRef} onScroll={syncAxis} sx={{ overflowX: "auto" }}>
         {/* ширина точная в px: колонка задач + ось с барами, без лишнего скролла */}
         <Table className="gantt-table" sx={{ tableLayout: "fixed", width: labelW + chartW, borderCollapse: "separate" }}>
-          <TableHead>
-            <TableRow>
-              <TableCell className="gantt-label-col" sx={{ width: labelW, p: 0, border: 0 }}>
-                <span className="gantt-col-title">Задача</span>
-                {/* правый край шапки — ручка изменения ширины колонки задач */}
-                <span className="gantt-resizer" onMouseDown={startResize}
-                      role="separator" aria-orientation="vertical"
-                      aria-label="Изменить ширину колонки задач" title="Потяните, чтобы изменить ширину колонки" />
-              </TableCell>
-              <TableCell sx={{ p: 0, border: 0 }}>
-                <svg width={chartW} height={TOP} data-tid="gantt-axis">
-                  {weekendXs.map((x, i) => (
-                    <rect key={"we" + i} x={x} y={TOP - 20} width={dayPx} height={20} fill="#1c2433" opacity={0.05} />
-                  ))}
-                  {gridLabels}
-                  {gridLineXs.map((x, i) => (
-                    <line key={"ln" + i} x1={x} y1={24} x2={x} y2={TOP} stroke="#d9e0ea" strokeDasharray="3,3" />
-                  ))}
-                  {todayX !== null && (
-                    <g>
-                      <line x1={todayX} y1={TOP - 20} x2={todayX} y2={TOP} stroke="#c8384a" strokeWidth={1.5} />
-                      <text x={todayX + 4} y={TOP - 26} fill="#c8384a">сегодня</text>
-                    </g>
-                  )}
-                </svg>
-              </TableCell>
-            </TableRow>
-          </TableHead>
           <TableBody>
             {ordered.map((it) => (
               <TableRow key={it.id}>

@@ -381,9 +381,12 @@ test("сломанная лямбда: тост и предупреждение,
   await expect(page.locator("[data-tid='gantt-svg']").first()).toBeVisible();
 });
 
-test("при скроле заголовок и панель масштаба прилипают к верху", async ({ page }) => {
+test("при скроле заголовок, панель масштаба и шкала дат прилипают к верху", async ({ page }) => {
   await mockLongTree(page);
   await build(page);
+  // приближаем, чтобы у шкалы дат появился горизонтальный скролл
+  const plus = page.getByRole("button", { name: "Увеличить масштаб" });
+  for (let i = 0; i < 20 && !(await plus.isDisabled()); i++) await plus.click();
   // узкий экран, чтобы страница прокручивалась
   await page.setViewportSize({ width: 1280, height: 500 });
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -398,5 +401,22 @@ test("при скроле заголовок и панель масштаба п
   expect(zoombarBox!.y).toBeCloseTo(appbarBox!.height, 0);
   await expect(appbar).toContainText("Диаграмма Ганта");
   await expect(zoombar.getByRole("button", { name: "Увеличить масштаб" })).toBeInViewport();
+  // легенда шкалы дат тоже прилипла и видна под шапкой
+  const axis = page.locator("[data-tid='gantt-axis']");
+  await expect(axis).toBeInViewport();
+  const axisBox = await axis.boundingBox();
+  expect(axisBox!.y).toBeGreaterThanOrEqual(appbarBox!.height);
+
+  // горизонтальный скролл тела двигает шкалу дат синхронно
+  await page.locator(".gantt-scroll").hover();
+  await page.mouse.wheel(500, 0);
+  await page.waitForTimeout(200);
+  const sync = await page.evaluate(() => ({
+    body: (document.querySelector(".gantt-scroll") as HTMLElement).scrollLeft,
+    axis: (document.querySelector(".gantt-axis-viewport") as HTMLElement).scrollLeft,
+  }));
+  expect(sync.body).toBeGreaterThan(0);
+  expect(sync.axis).toBe(sync.body);
+
   await expect(page).toHaveScreenshot("gantt-sticky-header.png");
 });
