@@ -80,6 +80,44 @@ async function mockYouTrack(page: Page, opts?: { resolved?: boolean; withHistory
   }
 }
 
+// Сценарий INFRA: дерево INFRA-1 → (INFRA-2, INFRA-3), INFRA-3 → (INFRA-4, INFRA-5)
+// с фактами Doing/Resolved. Проверяет, что родитель начинается от самого раннего
+// начала работ среди себя и детей и завершается не раньше позднего ребёнка.
+const INFRA_FACTS: Record<string, { doing: string; resolved: string; kids: string[] }> = {
+  "INFRA-1": { doing: "2026-09-08T10:00:00Z", resolved: "2026-09-11T00:00:00.000Z", kids: ["INFRA-2", "INFRA-3"] },
+  "INFRA-2": { doing: "2026-09-07T10:00:00Z", resolved: "2026-09-09T00:00:00.000Z", kids: [] },
+  "INFRA-3": { doing: "2026-09-08T10:00:00Z", resolved: "2026-09-15T00:00:00.000Z", kids: ["INFRA-4", "INFRA-5"] },
+  "INFRA-4": { doing: "2026-09-09T10:00:00Z", resolved: "2026-09-10T00:00:00.000Z", kids: [] },
+  "INFRA-5": { doing: "2026-09-14T10:00:00Z", resolved: "2026-09-18T00:00:00.000Z", kids: [] },
+};
+
+async function mockInfraTree(page: Page): Promise<void> {
+  for (const [id, fact] of Object.entries(INFRA_FACTS)) {
+    await page.route(`**/yt/api/issues/${id}?*`, (route) =>
+      route.fulfill(mkIssue({
+        idReadable: id,
+        summary: `Задача ${id}`,
+        resolved: fact.resolved,
+        customFields: [
+          { name: "Size", value: { name: "M" } },
+          { name: "State", value: { name: "Doing" } },
+        ],
+        links: fact.kids.length ? [{
+          direction: "OUTBOUND",
+          linkType: { name: "Subtask", sourceToTarget: "parent for", targetToSource: "subtask of" },
+          issues: fact.kids.map((k) => ({ idReadable: k })),
+        }] : [],
+      })));
+    await page.route(`**/yt/api/issues/${id}/activities?*`, (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          { timestamp: fact.doing, field: { name: "State" }, added: [{ name: "Doing" }], removed: [{ name: "Open" }] },
+        ]),
+      }));
+  }
+}
+
 // MUI Tab имеет role="tab"
 const tab = (page: Page, name: string) => page.getByRole("tab", { name });
 
@@ -171,6 +209,42 @@ test("диаграмма: дерево 1 родитель + 2 ребёнка, п
   await expect(labels.filter({ hasText: "INFRA-2" })).toHaveCount(1);
   await expect(labels.filter({ hasText: "INFRA-3" })).toHaveCount(1);
   await expect(page).toHaveScreenshot("gantt-tree.png", { fullPage: true });
+});
+
+test("диаграмма: сценарий INFRA — родитель от самого раннего начала среди себя и детей", async ({ page }) => {
+  await mockInfraTree(page);
+  await build(page);
+  // порядок DFS: родитель, затем дети и внуки
+  const order = (await page.locator("[data-tid='gantt-labels'] text").allTextContents())
+    .map((t) => (t.match(/INFRA-\d/) || [""])[0]).filter(Boolean);
+  expect(order).toEqual(["INFRA-1", "INFRA-2", "INFRA-3", "INFRA-4", "INFRA-5"]);
+
+  // план родительских обёрток: INFRA-1 07.09–18.09, INFRA-3 08.09–18.09
+  const planOf = (id: string) =>
+    page.locator("tr").filter({ hasText: id }).locator("[data-tid='gantt-svg'] title", { hasText: "план" });
+  await expect(planOf("INFRA-1")).toContainText("07.09.2026 — 18.09.2026");
+  await expect(planOf("INFRA-3")).toContainText("08.09.2026 — 18.09.2026");
+
+  // ГЕОМЕТРИЯ: сплошной бар (факт, нижняя дорожка y=19) должен начинаться
+  // ровно на дате из ожидаемого дерева. Масштаб выводим из подписей оси:
+  // подписи стоят на x = index*dayPx + 3, поэтому barX(07.09) = x("07 сент") - 3.
+  const axisX = async (label: string): Promise<number> =>
+    Number(await page.locator("[data-tid='gantt-axis'] text").filter({ hasText: label }).first().getAttribute("x"));
+  const x07 = await axisX("07 сент");
+  const x14 = await axisX("14 сент");
+  const dayPx = (x14 - x07) / 7;
+  const xOn = (day: number): number => x07 - 3 + (day - 7) * dayPx;
+  const factBarX = async (id: string): Promise<number> =>
+    Number(await page.locator("tr").filter({ hasText: id })
+      .locator("[data-tid='gantt-svg'] rect[y='19']").getAttribute("x"));
+
+  expect(await factBarX("INFRA-1")).toBeCloseTo(xOn(7), 0);  // 07.09
+  expect(await factBarX("INFRA-2")).toBeCloseTo(xOn(7), 0);  // 07.09
+  expect(await factBarX("INFRA-3")).toBeCloseTo(xOn(8), 0);  // 08.09
+  expect(await factBarX("INFRA-4")).toBeCloseTo(xOn(9), 0);  // 09.09
+  expect(await factBarX("INFRA-5")).toBeCloseTo(xOn(14), 0); // 14.09
+
+  await expect(page).toHaveScreenshot("gantt-infra-scenario.png", { fullPage: true });
 });
 
 test("диаграмма: resolved-задача зачёркнута — приглушённый бар", async ({ page }) => {

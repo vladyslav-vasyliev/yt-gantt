@@ -215,6 +215,45 @@ describe("schedule — модель «родитель-обёртка»", () => 
       expect(f(P.end!)).toBe("2026-08-14");   // до самой поздней завершённой
     });
 
+    it("сценарий INFRA: родитель стартует от самого раннего начала среди себя и детей", () => {
+      // Дерево: INFRA-1 → (INFRA-2, INFRA-3), INFRA-3 → (INFRA-4, INFRA-5).
+      // Факты: Doing/Resolved заданы для всех тикетов.
+      const I1 = mkIssue("INFRA-1", 3);
+      const I2 = mkIssue("INFRA-2", 2);
+      const I3 = mkIssue("INFRA-3", 5);
+      const I4 = mkIssue("INFRA-4", 2);
+      const I5 = mkIssue("INFRA-5", 3);
+      I1._kids = ["INFRA-2", "INFRA-3"];
+      I3._kids = ["INFRA-4", "INFRA-5"];
+      const fact = (it: Issue, doing: string, resolved: string): void => {
+        it.actualStart = new Date(doing);
+        it.resolved = true;
+        it.resolvedAt = new Date(resolved);
+        it.actualEnd = it.resolvedAt;
+      };
+      fact(I1, "2026-09-08", "2026-09-11");
+      fact(I2, "2026-09-07", "2026-09-09");
+      fact(I3, "2026-09-08", "2026-09-15"); // свой Doing раньше, чем у детей
+      fact(I4, "2026-09-09", "2026-09-10");
+      fact(I5, "2026-09-14", "2026-09-18");
+
+      schedule([I1, I2, I3, I4, I5], true, true);
+
+      expect(g([I1, I2, I3, I4, I5])).toEqual({
+        "INFRA-1": { s: "2026-09-07", e: "2026-09-18" },
+        "INFRA-2": { s: "2026-09-07", e: "2026-09-09" },
+        "INFRA-3": { s: "2026-09-08", e: "2026-09-18" },
+        "INFRA-4": { s: "2026-09-09", e: "2026-09-10" },
+        "INFRA-5": { s: "2026-09-14", e: "2026-09-18" },
+      });
+      // сплошной бар (факт) родителя-обёртки — агрегат по поддереву, а не
+      // собственный Doing родителя (иначе INFRA-1 рисовался бы с 08.09)
+      expect(f(I1.actualStart!)).toBe("2026-09-07");
+      expect(f(I1.actualEnd!)).toBe("2026-09-18");
+      expect(f(I3.actualStart!)).toBe("2026-09-08");
+      expect(f(I3.actualEnd!)).toBe("2026-09-18");
+    });
+
     it("правило «не раньше позднего ребёнка» сквозное: работает на всех уровнях", () => {
       // R -> A -> B -> C, 4 уровня: самый поздний конец — у глубокого внука C.
       // Сквозное правило: end(B) >= end(C), end(A) >= end(B) = end(C),

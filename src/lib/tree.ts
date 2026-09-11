@@ -135,6 +135,10 @@ export interface Placed { start: Date; end: Date }
 //   родитель без детей в выборке — обычная задача со своей длительностью.
 export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boolean): Issue[] {
   const resolved = new Map<string, Placed>();
+  // есть ли в поддереве фактический труд (Doing/Resolved) и закрыто ли поддерево
+  // (не осталось незавершённых) — для отрисовки сплошного бара родителя-обёртки
+  const factual = new Map<string, boolean>();
+  const closed = new Map<string, boolean>();
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const axis = startToday ? nextWorkday(today) : nextWorkday(
     new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7)));
@@ -179,6 +183,7 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
     if (known) return known;
     if (stack.has(key)) {
       const s = new Date(axis);
+      factual.set(key, false); closed.set(key, false);
       return { start: s, end: barEnd(s, Math.max(it.days ?? 1, 1)) };
     }
     stack.add(key);
@@ -190,13 +195,16 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
 
     let start: Date, end: Date, estStart: Date, estEnd: Date;
     if (ownKids.length) {
-      // родитель-обёртка: отсчёт — момент начала работ на дочерней, начатой
-      // раньше других (самый ранний факт старта среди детей); завершение —
-      // НЕ РАНЬШЕ самой поздней даты завершения детей: если у родителя есть
-      // собственный факт конца (Resolved), берём максимум из него и детей
+      // родитель-обёртка: отсчёт — самый ранний момент начала работ среди
+      // самого родителя и его детей (факт родителя тоже участвует: INFRA-3
+      // мог перейти в Doing раньше, чем его дети); завершение — НЕ РАНЬШЕ
+      // самой поздней даты завершения детей: если у родителя есть собственный
+      // факт конца (Resolved), берём максимум из него и детей
       let prevEnd: Date | null = null;
-      let earliestFact: Date | null = null; // самый ранний actualStart среди детей
+      // изначально — собственный факт старта родителя, дальше добавляем детей
+      let earliestFact: Date | null = it.actualStart ? new Date(it.actualStart) : null;
       let minStart: Date | null = null;     // самый ранний старт ребёнка по каскаду
+      let kidFactual = false, allKidsClosed = true;
       for (const k of ownKids) {
         const kAnchor = prevEnd ? dayAfter(prevEnd) : new Date(anchor);
         const r = place(k, kAnchor, stack);
@@ -204,6 +212,8 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
           minStart = new Date(r.start);
         if (k.actualStart && (!earliestFact || k.actualStart < earliestFact))
           earliestFact = new Date(k.actualStart);
+        kidFactual = kidFactual || !!factual.get(k.id.toUpperCase());
+        allKidsClosed = allKidsClosed && !!closed.get(k.id.toUpperCase());
         prevEnd = r.end;
       }
       start = earliestFact ?? minStart!;
@@ -213,10 +223,22 @@ export function schedule(issues: Issue[], skipWeekends: boolean, startToday: boo
       const ownEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
       if (ownEnd && ownEnd > end) end = new Date(ownEnd);
       estStart = new Date(start); estEnd = new Date(end);
+      // сплошной бар родителя-обёртки — агрегат по себе и поддереву: он должен
+      // начинаться/заканчиваться там же, где обёртка, а не по собственному факту
+      const isFactual = !!it.actualStart || kidFactual;
+      const isClosed = !!ownEnd || allKidsClosed;
+      if (isFactual) {
+        it.actualStart = new Date(start);
+        // незакрытое поддерево оставляем «в работе» — factSpan доведёт до сегодня
+        if (isClosed) it.actualEnd = new Date(end);
+      }
+      factual.set(key, isFactual); closed.set(key, isClosed);
     } else {
       // лист: факт (переход в статус начала / дата Resolved) перекрывает каскад
       const fStart = it.actualStart || null;
       const fEnd = it.resolved && it.actualEnd ? it.actualEnd : null;
+      factual.set(key, !!fStart);
+      closed.set(key, !!fEnd);
       if (fStart) {
         // бар оценки — всегда от фактического старта + Size рабочих дней,
         // чтобы шёл параллельно факту и показывал недо-/переоценку срока
